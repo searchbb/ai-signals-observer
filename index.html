@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KFC Knowledge Atlas Demo</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">K</div>
+          <div>
+            <p class="eyebrow">Knowledge Atlas</p>
+            <h1>KFC 资产站 Demo</h1>
+          </div>
+        </div>
+        <nav class="nav">
+          <a href="#home">总览</a>
+          <a href="#topics">Topics</a>
+          <a href="#issues">Issues</a>
+          <a href="#cards">Cards</a>
+          <a href="#research">Research</a>
+          <a href="#timeline">时间线</a>
+        </nav>
+        <section>
+          <p class="eyebrow">Topic Sidebar</p>
+          <div id="topic-nav" class="topic-nav"></div>
+        </section>
+      </aside>
+      <main class="main">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Live Demo</p>
+            <h2>可点击、可搜索、能看细节的知识资产站</h2>
+            <p class="hero-copy">
+              数据直接来自 KFC 本地知识资产目录，演示首页指标、Topic 导航、Issue/Card/Research
+              详情页、全文搜索和更新时间线。
+            </p>
+          </div>
+          <div class="search-wrap">
+            <label for="search-input">全站搜索</label>
+            <input
+              id="search-input"
+              type="search"
+              placeholder="输入 topic、issue、card、观点或 evidence 关键词"
+            />
+            <div id="search-results" class="search-results"></div>
+          </div>
+        </header>
+        <section id="stats" class="stats"></section>
+        <section id="content" class="content-panel"></section>
+      </main>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
