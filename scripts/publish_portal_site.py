@@ -119,6 +119,23 @@ def research_asset_hashes() -> dict[str, str]:
     }
 
 
+def detail_sample_hashes(manifest_path: Path) -> dict[str, str]:
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    samples: dict[str, str] = {}
+    for row in list(payload.get("entries") or []):
+        detail_type = str(row.get("type") or "")
+        relative_path = str(row.get("path") or "")
+        if not detail_type or not relative_path or detail_type in samples:
+            continue
+        samples[detail_type] = str(row.get("sha256") or "")
+        samples[f"{detail_type}:path"] = f"data/{relative_path}"
+    return {
+        samples[f"{detail_type}:path"]: samples[detail_type]
+        for detail_type in ("topic", "issue", "card", "research", "article", "news")
+        if detail_type in samples and f"{detail_type}:path" in samples
+    }
+
+
 def fetch_bytes(url: str, *, timeout_seconds: int = 20) -> bytes:
     with urlopen(url, timeout=timeout_seconds) as response:  # noqa: S310 - fixed public URL verification
         return response.read()
@@ -131,6 +148,8 @@ def verify_public_site(
     expected_index_sha: str,
     expected_app_js_sha: str,
     expected_styles_sha: str,
+    expected_detail_manifest_sha: str,
+    expected_detail_sample_hashes: dict[str, str],
     expected_asset_hashes: dict[str, str],
     attempts: int,
     sleep_seconds: int,
@@ -140,6 +159,7 @@ def verify_public_site(
     app_js_url = f"{pages_url.rstrip('/')}/app.js?verify={cache_key}"
     styles_url = f"{pages_url.rstrip('/')}/styles.css?verify={cache_key}"
     site_data_url = f"{pages_url.rstrip('/')}/data/site-data.json?verify={cache_key}"
+    detail_manifest_url = f"{pages_url.rstrip('/')}/data/details-manifest.json?verify={cache_key}"
     last_error = ""
     for attempt in range(1, attempts + 1):
         try:
@@ -147,10 +167,12 @@ def verify_public_site(
             app_js = fetch_bytes(app_js_url)
             styles = fetch_bytes(styles_url)
             site_data = fetch_bytes(site_data_url)
+            detail_manifest = fetch_bytes(detail_manifest_url)
             remote_index_sha = sha256_bytes(index_html)
             remote_app_js_sha = sha256_bytes(app_js)
             remote_styles_sha = sha256_bytes(styles)
             remote_sha = sha256_bytes(site_data)
+            remote_detail_manifest_sha = sha256_bytes(detail_manifest)
             if b'<script type="module" src="./app.js"></script>' not in index_html:
                 raise ValueError("index.html does not reference app.js")
             if b'fetch("./data/site-data.json"' not in app_js:
@@ -173,6 +195,21 @@ def verify_public_site(
                 raise ValueError(
                     f"remote site-data sha mismatch: expected {expected_site_data_sha}, got {remote_sha}"
                 )
+            if remote_detail_manifest_sha != expected_detail_manifest_sha:
+                raise ValueError(
+                    "remote detail manifest sha mismatch: "
+                    f"expected {expected_detail_manifest_sha}, got {remote_detail_manifest_sha}"
+                )
+            remote_detail_sample_hashes: dict[str, str] = {}
+            for relative_path, expected_hash in expected_detail_sample_hashes.items():
+                detail_url = f"{pages_url.rstrip('/')}/{relative_path}?verify={cache_key}"
+                remote_hash = sha256_bytes(fetch_bytes(detail_url))
+                if remote_hash != expected_hash:
+                    raise ValueError(
+                        f"remote detail shard sha mismatch for {relative_path}: "
+                        f"expected {expected_hash}, got {remote_hash}"
+                    )
+                remote_detail_sample_hashes[relative_path] = remote_hash
             remote_asset_hashes: dict[str, str] = {}
             for relative_path, expected_hash in expected_asset_hashes.items():
                 asset_url = f"{pages_url.rstrip('/')}/{relative_path}?verify={cache_key}"
@@ -193,6 +230,8 @@ def verify_public_site(
                 "remote_index_sha256": remote_index_sha,
                 "remote_app_js_sha256": remote_app_js_sha,
                 "remote_styles_sha256": remote_styles_sha,
+                "remote_detail_manifest_sha256": remote_detail_manifest_sha,
+                "remote_detail_sample_sha256": remote_detail_sample_hashes,
                 "remote_research_asset_sha256": remote_asset_hashes,
             }
         except (URLError, ValueError, http.client.IncompleteRead, TimeoutError, OSError) as exc:
@@ -205,6 +244,7 @@ def verify_public_site(
         "index_url": index_url,
         "app_js_url": app_js_url,
         "site_data_url": site_data_url,
+        "detail_manifest_url": detail_manifest_url,
         "remote_site_data_sha256": "",
         "error": last_error,
     }
@@ -246,6 +286,9 @@ def main() -> int:
     index_sha = sha256_file(SITE_ROOT / "index.html")
     app_js_sha = sha256_file(SITE_ROOT / "app.js")
     styles_sha = sha256_file(SITE_ROOT / "styles.css")
+    detail_manifest_path = SITE_ROOT / "data" / "details-manifest.json"
+    detail_manifest_sha = sha256_file(detail_manifest_path)
+    detail_samples = detail_sample_hashes(detail_manifest_path)
     asset_hashes = research_asset_hashes()
     site_data_summary = summarize_payload(site_data_path)
     branch = current_branch()
@@ -275,6 +318,8 @@ def main() -> int:
             expected_index_sha=index_sha,
             expected_app_js_sha=app_js_sha,
             expected_styles_sha=styles_sha,
+            expected_detail_manifest_sha=detail_manifest_sha,
+            expected_detail_sample_hashes=detail_samples,
             expected_asset_hashes=asset_hashes,
             attempts=max(1, args.verify_attempts),
             sleep_seconds=max(1, args.verify_sleep_seconds),
@@ -300,6 +345,8 @@ def main() -> int:
         "index_sha256": index_sha,
         "app_js_sha256": app_js_sha,
         "styles_sha256": styles_sha,
+        "detail_manifest_sha256": detail_manifest_sha,
+        "detail_sample_sha256": detail_samples,
         "research_asset_sha256": asset_hashes,
         "verify": verify_result,
     }

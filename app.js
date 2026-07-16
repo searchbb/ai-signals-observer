@@ -54,10 +54,10 @@ async function loadFullData() {
 async function init() {
   searchInput.disabled = true;
   updateRouteMode();
+  state.fastDetail = await loadFastDetail();
   const fullDataPromise = loadFullData()
     .then((data) => ({ data, error: null }))
     .catch((error) => ({ data: null, error }));
-  state.fastDetail = await loadFastDetail();
   if (state.fastDetail) {
     state.data = emptyPortalData(state.fastDetail.type, state.fastDetail.item);
     setActiveNav(state.fastDetail.type);
