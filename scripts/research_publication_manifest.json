@@ -4,12 +4,12 @@
   "reports": [
     {
       "id": "research-ad73a1b2b62b4012",
-      "path": "data/semantic_pipeline_v2/research_reports/cloud_vendor_margin_20260716_v2.md",
+      "path": "data/semantic_pipeline_v2/research_reports/cloud_vendor_margin_20260717_v4.md",
       "category": "深度研究",
-      "sha256": "91cfb8bb37871856af32dc9a4f5bd3076c2f8a090914e18127c1bd5da1b0812c",
+      "sha256": "ef4725572866b5811ceb581a3546dffb8197d94fc5592de6c04c1031a7e5850d",
       "admission": "verified_research_job_v1",
-      "validated_at": "2026-07-16T11:26:37.043459Z",
-      "published_at": "2026-07-16T11:27:00.113526Z"
+      "validated_at": "2026-07-16T17:31:30Z",
+      "published_at": "2026-07-16T17:34:00Z"
     },
     {
       "id": "ai-cloud-competition-aws",
