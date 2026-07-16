@@ -4,17 +4,29 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from validate_portal_data import validate_portal_file
 
 
 SITE_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = Path(__file__).resolve().with_name("build_site_data.py")
+DETAIL_COLLECTION_TYPES = {
+    "topics": "topic",
+    "issues": "issue",
+    "cards": "card",
+    "research": "research",
+    "articles": "article",
+    "news": "news",
+}
+URL_SAFE_FILENAME_CHARS = "-_.!~*'()"
 
 
 def now_iso() -> str:
@@ -36,6 +48,89 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sync_detail_shards(*, payload_path: Path, detail_root: Path) -> dict[str, object]:
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    collections = dict(payload.get("collections") or {})
+    detail_root.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(prefix=".details-staging-", dir=str(detail_root.parent))
+    )
+    entries: list[dict[str, object]] = []
+    counts: dict[str, int] = {}
+    try:
+        for collection_name, detail_type in DETAIL_COLLECTION_TYPES.items():
+            rows = list(collections.get(collection_name) or [])
+            counts[detail_type] = len(rows)
+            type_root = staging_root / detail_type
+            type_root.mkdir(parents=True, exist_ok=True)
+            for item in rows:
+                item_id = str(item.get("id") or "").strip()
+                if not item_id:
+                    raise RuntimeError(f"{collection_name} detail item is missing id")
+                filename = f"{quote(item_id, safe=URL_SAFE_FILENAME_CHARS)}.json"
+                shard_path = type_root / filename
+                shard = {
+                    "schemaVersion": payload.get("schemaVersion"),
+                    "generatedAt": payload.get("generatedAt"),
+                    "type": detail_type,
+                    "id": item_id,
+                    "item": item,
+                }
+                shard_path.write_text(
+                    json.dumps(shard, ensure_ascii=False, separators=(",", ":")),
+                    encoding="utf-8",
+                )
+                entries.append(
+                    {
+                        "type": detail_type,
+                        "id": item_id,
+                        "path": f"details/{detail_type}/{filename}",
+                        "bytes": shard_path.stat().st_size,
+                        "sha256": sha256_file(shard_path),
+                    }
+                )
+
+        backup_root = detail_root.with_name(f".{detail_root.name}-backup-{os.getpid()}")
+        if backup_root.exists():
+            shutil.rmtree(backup_root)
+        if detail_root.exists():
+            detail_root.replace(backup_root)
+        staging_root.replace(detail_root)
+        if backup_root.exists():
+            shutil.rmtree(backup_root)
+
+        manifest = {
+            "schemaVersion": payload.get("schemaVersion"),
+            "generatedAt": payload.get("generatedAt"),
+            "count": len(entries),
+            "counts": counts,
+            "entries": entries,
+        }
+        manifest_path = detail_root.parent / "details-manifest.json"
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            prefix=".details-manifest-",
+            suffix=".json",
+            dir=str(manifest_path.parent),
+            delete=False,
+        ) as handle:
+            temp_manifest = Path(handle.name)
+            json.dump(manifest, handle, ensure_ascii=False, separators=(",", ":"))
+        temp_manifest.replace(manifest_path)
+        return {
+            "status": "success",
+            "root": str(detail_root),
+            "manifest": str(manifest_path),
+            "manifest_sha256": sha256_file(manifest_path),
+            "count": len(entries),
+            "counts": counts,
+        }
+    finally:
+        if staging_root.exists():
+            shutil.rmtree(staging_root)
 
 
 def run_build(*, repo_root: Path, out_path: Path) -> None:
@@ -133,6 +228,11 @@ def main() -> int:
         if temp_path.exists():
             temp_path.unlink()
 
+    detail_shards = sync_detail_shards(
+        payload_path=out_path,
+        detail_root=out_path.parent / "details",
+    )
+
     result = {
         "status": "success",
         "generated_at": now_iso(),
@@ -145,6 +245,7 @@ def main() -> int:
         "after_sha256": after_sha,
         **summary,
         "validation": validation,
+        "detail_shards": detail_shards,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     return 0

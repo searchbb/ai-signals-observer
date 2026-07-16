@@ -1,6 +1,6 @@
 import { searchRoute, searchTopMatches } from "./scripts/search-ranking.mjs";
 
-const state = { data: null, timelineType: "all", timelineEvent: "all", mermaid: null };
+const state = { data: null, timelineType: "all", timelineEvent: "all", mermaid: null, fastDetail: null };
 const contentEl = document.getElementById("content");
 const statsEl = document.getElementById("stats");
 const topicNavEl = document.getElementById("topic-nav");
@@ -16,16 +16,71 @@ const ROUTES = {
   news: "news",
 };
 
-async function init() {
-  searchInput.disabled = true;
+function routeParts() {
+  const [route, encodedId] = (window.location.hash.replace(/^#/, "") || "home").split("/");
+  return { route, id: decodeURIComponent(encodedId || "") };
+}
+
+function updateRouteMode() {
+  const { route, id } = routeParts();
+  document.documentElement.classList.toggle("direct-detail", Boolean(id && Object.hasOwn(ROUTES, route)));
+}
+
+function emptyPortalData(type, item) {
+  const data = {
+    stats: {}, newsMeta: {}, relations: [], timeline: [],
+    topics: [], issues: [], cards: [], research: [], articles: [], news: [],
+  };
+  data[ROUTES[type]] = [item];
+  return data;
+}
+
+async function loadFastDetail() {
+  const { route, id } = routeParts();
+  if (!id || !Object.hasOwn(ROUTES, route)) return null;
+  const response = await fetch(`./data/details/${route}/${encodeURIComponent(id)}.json`, { cache: "no-store" });
+  if (!response.ok) return null;
+  const payload = await response.json();
+  if (payload.type !== route || payload.id !== id || !payload.item) return null;
+  return { type: route, id, item: payload.item };
+}
+
+async function loadFullData() {
   const response = await fetch("./data/site-data.json", { cache: "no-store" });
   if (!response.ok) throw new Error(`数据加载失败（${response.status}）`);
-  state.data = normalizeData(await response.json());
+  return normalizeData(await response.json());
+}
+
+async function init() {
+  searchInput.disabled = true;
+  updateRouteMode();
+  const fullDataPromise = loadFullData()
+    .then((data) => ({ data, error: null }))
+    .catch((error) => ({ data: null, error }));
+  state.fastDetail = await loadFastDetail();
+  if (state.fastDetail) {
+    state.data = emptyPortalData(state.fastDetail.type, state.fastDetail.item);
+    setActiveNav(state.fastDetail.type);
+    renderDetail(state.fastDetail.type, state.fastDetail.item);
+  }
+
+  const fullResult = await fullDataPromise;
+  if (fullResult.error) {
+    if (state.fastDetail) {
+      searchInput.placeholder = "全站索引暂未加载，当前详情仍可阅读";
+      return;
+    }
+    throw fullResult.error;
+  }
+  state.data = fullResult.data;
   renderStats();
   renderTopicNav();
   bindSearch();
   searchInput.disabled = false;
-  window.addEventListener("hashchange", renderRoute);
+  window.addEventListener("hashchange", () => {
+    updateRouteMode();
+    renderRoute();
+  });
   renderRoute();
 }
 
@@ -89,8 +144,8 @@ function renderTopicNav() {
 
 function renderRoute() {
   searchResults.innerHTML = "";
-  const [route, encodedId] = (window.location.hash.replace(/^#/, "") || "home").split("/");
-  const id = decodeURIComponent(encodedId || "");
+  updateRouteMode();
+  const { route, id } = routeParts();
   setActiveNav(route);
   if (route === "home") return renderHome();
   if (route === "timeline") return renderTimeline();
@@ -102,7 +157,9 @@ function renderRoute() {
 function setActiveNav(route) {
   const listRoute = ROUTES[route] || route;
   document.querySelectorAll(".nav a").forEach((link) => {
-    link.classList.toggle("active", link.getAttribute("href") === `#${listRoute}`);
+    const active = link.getAttribute("href") === `#${listRoute}`;
+    link.classList.toggle("active", active);
+    if (active) link.scrollIntoView({ block: "nearest", inline: "center" });
   });
 }
 
