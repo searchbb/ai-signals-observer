@@ -124,7 +124,9 @@ async function ensureRouteData(route) {
   renderPortalLoading();
   const slowTimer = window.setTimeout(showSlowLoadingNote, 2500);
   try {
-    const data = await fetchJson(url, { timeoutMs: 15000 });
+    // GitHub Pages 在部分手机网络上偶发连接握手抖动；骨架持续可见，
+    // 不要在小路由数据仍可能成功时过早把页面判成失败。
+    const data = await fetchJson(url, { timeoutMs: 30000 });
     if (loadId !== state.indexLoadId) return;
     mergeData(data);
     state.loadedRoutes.add(route);
