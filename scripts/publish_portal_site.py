@@ -131,7 +131,7 @@ def verify_public_site(
             remote_sha = sha256_bytes(site_data)
             if b'<script type="module" src="./app.js"></script>' not in index_html:
                 raise ValueError("index.html does not reference app.js")
-            if b'fetch("./data/site-data.json")' not in app_js:
+            if b'fetch("./data/site-data.json"' not in app_js:
                 raise ValueError("app.js does not fetch site-data.json")
             if remote_sha != expected_site_data_sha:
                 raise ValueError(
