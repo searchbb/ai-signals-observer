@@ -16,7 +16,7 @@ const mailLinks = [
 ];
 
 async function blockFullIndex(page) {
-  await page.route('**/data/site-data.json', (route) => route.abort('failed'));
+  await page.route('**/data/site-index.json', (route) => route.abort('failed'));
 }
 
 test('email article deep link renders title and summary without the full site index', async ({ page }) => {

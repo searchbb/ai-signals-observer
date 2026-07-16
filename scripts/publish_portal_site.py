@@ -146,6 +146,7 @@ def verify_public_site(
     *,
     pages_url: str,
     expected_site_data_sha: str,
+    expected_site_index_sha: str,
     expected_index_sha: str,
     expected_app_js_sha: str,
     expected_styles_sha: str,
@@ -160,6 +161,7 @@ def verify_public_site(
     app_js_url = f"{pages_url.rstrip('/')}/app.js?verify={cache_key}"
     styles_url = f"{pages_url.rstrip('/')}/styles.css?verify={cache_key}"
     site_data_url = f"{pages_url.rstrip('/')}/data/site-data.json?verify={cache_key}"
+    site_index_url = f"{pages_url.rstrip('/')}/data/site-index.json?verify={cache_key}"
     detail_manifest_url = f"{pages_url.rstrip('/')}/data/details-manifest.json?verify={cache_key}"
     last_error = ""
     for attempt in range(1, attempts + 1):
@@ -168,19 +170,23 @@ def verify_public_site(
             app_js = fetch_bytes(app_js_url)
             styles = fetch_bytes(styles_url)
             site_data = fetch_bytes(site_data_url)
+            site_index = fetch_bytes(site_index_url)
             detail_manifest = fetch_bytes(detail_manifest_url)
             remote_index_sha = sha256_bytes(index_html)
             remote_app_js_sha = sha256_bytes(app_js)
             remote_styles_sha = sha256_bytes(styles)
             remote_sha = sha256_bytes(site_data)
+            remote_site_index_sha = sha256_bytes(site_index)
             remote_detail_manifest_sha = sha256_bytes(detail_manifest)
             if not re.search(
                 rb'<script\s+type="module"\s+src="\./app\.js(?:\?[^"<>]*)?"></script>',
                 index_html,
             ):
                 raise ValueError("index.html does not reference app.js")
-            if b'fetch("./data/site-data.json"' not in app_js:
-                raise ValueError("app.js does not fetch site-data.json")
+            if b"site-index.json" not in app_js:
+                raise ValueError("app.js does not fetch site-index.json")
+            if b"site-data.json" in app_js:
+                raise ValueError("app.js still references the full site-data.json snapshot")
             if not re.search(
                 rb'<link\s+rel="stylesheet"\s+href="\./styles\.css(?:\?[^"<>]*)?"\s*/?>',
                 index_html,
@@ -201,6 +207,11 @@ def verify_public_site(
             if remote_sha != expected_site_data_sha:
                 raise ValueError(
                     f"remote site-data sha mismatch: expected {expected_site_data_sha}, got {remote_sha}"
+                )
+            if remote_site_index_sha != expected_site_index_sha:
+                raise ValueError(
+                    "remote site-index sha mismatch: "
+                    f"expected {expected_site_index_sha}, got {remote_site_index_sha}"
                 )
             if remote_detail_manifest_sha != expected_detail_manifest_sha:
                 raise ValueError(
@@ -233,7 +244,9 @@ def verify_public_site(
                 "app_js_url": app_js_url,
                 "styles_url": styles_url,
                 "site_data_url": site_data_url,
+                "site_index_url": site_index_url,
                 "remote_site_data_sha256": remote_sha,
+                "remote_site_index_sha256": remote_site_index_sha,
                 "remote_index_sha256": remote_index_sha,
                 "remote_app_js_sha256": remote_app_js_sha,
                 "remote_styles_sha256": remote_styles_sha,
@@ -251,6 +264,7 @@ def verify_public_site(
         "index_url": index_url,
         "app_js_url": app_js_url,
         "site_data_url": site_data_url,
+        "site_index_url": site_index_url,
         "detail_manifest_url": detail_manifest_url,
         "remote_site_data_sha256": "",
         "error": last_error,
@@ -290,6 +304,8 @@ def main() -> int:
     sync_result = sync_site_data(repo_root=repo_root, python_bin=args.python_bin)
     site_data_path = SITE_ROOT / "data" / "site-data.json"
     site_data_sha = sha256_file(site_data_path)
+    site_index_path = SITE_ROOT / "data" / "site-index.json"
+    site_index_sha = sha256_file(site_index_path)
     index_sha = sha256_file(SITE_ROOT / "index.html")
     app_js_sha = sha256_file(SITE_ROOT / "app.js")
     styles_sha = sha256_file(SITE_ROOT / "styles.css")
@@ -322,6 +338,7 @@ def main() -> int:
         verify_result = verify_public_site(
             pages_url=pages_url,
             expected_site_data_sha=site_data_sha,
+            expected_site_index_sha=site_index_sha,
             expected_index_sha=index_sha,
             expected_app_js_sha=app_js_sha,
             expected_styles_sha=styles_sha,
@@ -349,6 +366,8 @@ def main() -> int:
         "sync_result": sync_result,
         "site_data_summary": site_data_summary,
         "site_data_sha256": site_data_sha,
+        "site_index_sha256": site_index_sha,
+        "site_index_bytes": site_index_path.stat().st_size,
         "index_sha256": index_sha,
         "app_js_sha256": app_js_sha,
         "styles_sha256": styles_sha,

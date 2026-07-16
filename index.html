@@ -14,7 +14,7 @@
         addEventListener("hashchange", syncRouteMode);
       })();
     </script>
-    <link rel="stylesheet" href="./styles.css?v=20260716-nav-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260716-fast-index-1" />
   </head>
   <body>
     <div class="shell">
@@ -62,7 +62,22 @@
           </div>
         </header>
         <section id="stats" class="stats"></section>
-        <section id="content" class="content-panel"></section>
+        <section id="content" class="content-panel">
+          <section class="portal-loading" aria-live="polite">
+            <p class="eyebrow">最新内容</p>
+            <div class="skeleton-line skeleton-title"></div>
+            <div class="skeleton-line skeleton-copy"></div>
+            <div class="skeleton-line skeleton-copy short"></div>
+            <div class="skeleton-list">
+              <div class="skeleton-line skeleton-row"></div>
+              <div class="skeleton-line skeleton-row"></div>
+              <div class="skeleton-line skeleton-row"></div>
+              <div class="skeleton-line skeleton-row"></div>
+              <div class="skeleton-line skeleton-row"></div>
+            </div>
+            <p class="loading-note" hidden>正在加载最新内容…</p>
+          </section>
+        </section>
       </main>
     </div>
     <script>
@@ -118,7 +133,7 @@
 
         window.__fastDetailPromise = fetch(
           `./data/details/${type}/${encodeURIComponent(id)}.json`,
-          { cache: "no-store" },
+          { cache: "default" },
         )
           .then((response) => response.ok ? response.json() : null)
           .then((payload) => {
@@ -130,6 +145,6 @@
           .catch(() => null);
       })();
     </script>
-    <script type="module" src="./app.js?v=20260716-nav-1"></script>
+    <script type="module" src="./app.js?v=20260716-fast-index-1"></script>
   </body>
 </html>

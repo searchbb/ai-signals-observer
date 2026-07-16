@@ -1,6 +1,15 @@
 import { searchRoute, searchTopMatches } from "./scripts/search-ranking.mjs";
 
-const state = { data: null, timelineType: "all", timelineEvent: "all", mermaid: null, fastDetail: null };
+const state = {
+  data: null,
+  timelineType: "all",
+  timelineEvent: "all",
+  mermaid: null,
+  fastDetail: null,
+  detailCache: new Map(),
+  indexLoadId: 0,
+  searchBound: false,
+};
 const contentEl = document.getElementById("content");
 const statsEl = document.getElementById("stats");
 const topicNavEl = document.getElementById("topic-nav");
@@ -42,50 +51,103 @@ async function loadFastDetail() {
     const bootstrapped = await window.__fastDetailPromise;
     if (bootstrapped?.type === route && bootstrapped?.id === id && bootstrapped.item) return bootstrapped;
   }
-  const response = await fetch(`./data/details/${route}/${encodeURIComponent(id)}.json`, { cache: "no-store" });
-  if (!response.ok) return null;
-  const payload = await response.json();
+  const payload = await fetchJson(`./data/details/${route}/${encodeURIComponent(id)}.json`);
   if (payload.type !== route || payload.id !== id || !payload.item) return null;
   return { type: route, id, item: payload.item };
 }
 
-async function loadFullData() {
-  const response = await fetch("./data/site-data.json", { cache: "no-store" });
-  if (!response.ok) throw new Error(`数据加载失败（${response.status}）`);
-  return normalizeData(await response.json());
+async function fetchJson(url, { timeoutMs = 10000 } = {}) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { cache: "default", signal: controller.signal });
+    if (!response.ok) throw new Error(`数据加载失败（${response.status}）`);
+    return await response.json();
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("网络响应超时");
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function loadIndexData() {
+  return normalizeData(await fetchJson("./data/site-index.json"));
 }
 
 async function init() {
   searchInput.disabled = true;
   updateRouteMode();
+  window.addEventListener("hashchange", () => {
+    updateRouteMode();
+    if (state.data) void renderRoute();
+  });
   state.fastDetail = await loadFastDetail();
-  const fullDataPromise = loadFullData()
-    .then((data) => ({ data, error: null }))
-    .catch((error) => ({ data: null, error }));
   if (state.fastDetail) {
+    state.detailCache.set(`${state.fastDetail.type}/${state.fastDetail.id}`, state.fastDetail.item);
     state.data = emptyPortalData(state.fastDetail.type, state.fastDetail.item);
     setActiveNav(state.fastDetail.type);
     renderDetail(state.fastDetail.type, state.fastDetail.item);
+  } else {
+    renderPortalLoading();
   }
+  await loadPortalIndex();
+}
 
-  const fullResult = await fullDataPromise;
-  if (fullResult.error) {
+async function loadPortalIndex() {
+  const loadId = ++state.indexLoadId;
+  const slowTimer = window.setTimeout(showSlowLoadingNote, 2500);
+  try {
+    const data = await loadIndexData();
+    if (loadId !== state.indexLoadId) return;
+    state.data = data;
+    renderStats();
+    renderTopicNav();
+    if (!state.searchBound) {
+      bindSearch();
+      state.searchBound = true;
+    }
+    searchInput.disabled = false;
+    await renderRoute();
+  } catch (error) {
+    if (loadId !== state.indexLoadId) return;
     if (state.fastDetail) {
       searchInput.placeholder = "全站索引暂未加载，当前详情仍可阅读";
       return;
     }
-    throw fullResult.error;
+    renderLoadError(error, () => void loadPortalIndex());
+  } finally {
+    window.clearTimeout(slowTimer);
   }
-  state.data = fullResult.data;
-  renderStats();
-  renderTopicNav();
-  bindSearch();
-  searchInput.disabled = false;
-  window.addEventListener("hashchange", () => {
-    updateRouteMode();
-    renderRoute();
-  });
-  renderRoute();
+}
+
+function loadingSkeleton(label = "最新内容") {
+  return `<section class="portal-loading" aria-live="polite">
+    <p class="eyebrow">${escapeHtml(label)}</p>
+    <div class="skeleton-line skeleton-title"></div>
+    <div class="skeleton-line skeleton-copy"></div>
+    <div class="skeleton-line skeleton-copy short"></div>
+    <div class="skeleton-list">${Array.from({ length: 5 }, () => '<div class="skeleton-line skeleton-row"></div>').join("")}</div>
+    <p class="loading-note" hidden>正在加载最新内容…</p>
+  </section>`;
+}
+
+function renderPortalLoading() {
+  if (!contentEl.querySelector(".portal-loading")) contentEl.innerHTML = loadingSkeleton();
+}
+
+function showSlowLoadingNote() {
+  contentEl.querySelector(".loading-note")?.removeAttribute("hidden");
+}
+
+function renderLoadError(error, retry) {
+  contentEl.innerHTML = `<section class="load-error" role="alert">
+    <p class="eyebrow">连接提示</p>
+    <h3>内容加载失败</h3>
+    <p>${escapeHtml(error.message || "网络暂时不可用")}</p>
+    <button class="retry-button" type="button">重新加载</button>
+  </section>`;
+  contentEl.querySelector(".retry-button")?.addEventListener("click", retry);
 }
 
 function normalizeData(raw) {
@@ -148,7 +210,7 @@ function renderTopicNav() {
     </a>`).join("");
 }
 
-function renderRoute() {
+async function renderRoute() {
   searchResults.innerHTML = "";
   updateRouteMode();
   const { route, id } = routeParts();
@@ -156,9 +218,45 @@ function renderRoute() {
   setActiveNav(route);
   if (route === "home") return renderHome();
   if (route === "timeline") return renderTimeline();
-  if (id && Object.hasOwn(ROUTES, route)) return renderDetail(route, entity(route, id));
+  if (id && Object.hasOwn(ROUTES, route)) return renderDetailRoute(route, id);
   if (Object.values(ROUTES).includes(route)) return renderAssetIndex(route, state.data[route]);
   renderMissing();
+}
+
+async function loadDetailItem(type, id) {
+  const key = `${type}/${id}`;
+  if (state.detailCache.has(key)) return state.detailCache.get(key);
+  const payload = await fetchJson(`./data/details/${type}/${encodeURIComponent(id)}.json`);
+  if (payload.type !== type || payload.id !== id || !payload.item) {
+    throw new Error("详情数据格式不完整");
+  }
+  state.detailCache.set(key, payload.item);
+  return payload.item;
+}
+
+async function renderDetailRoute(type, id) {
+  const expectedRoute = `${type}/${id}`;
+  const cached = state.detailCache.get(expectedRoute);
+  if (cached) return renderDetail(type, cached);
+  const preview = entity(type, id);
+  contentEl.innerHTML = `<section class="detail detail-header detail-loading">
+    <p class="eyebrow">${escapeHtml(typeLabel(type))}</p>
+    <h3>${escapeHtml(preview?.title || "正在打开内容")}</h3>
+    ${loadingSkeleton("内容正文")}
+  </section>`;
+  const slowTimer = window.setTimeout(showSlowLoadingNote, 2500);
+  try {
+    const item = await loadDetailItem(type, id);
+    const current = routeParts();
+    if (`${current.route}/${current.id}` !== expectedRoute) return;
+    renderDetail(type, item);
+  } catch (error) {
+    const current = routeParts();
+    if (`${current.route}/${current.id}` !== expectedRoute) return;
+    renderLoadError(error, () => void renderDetailRoute(type, id));
+  } finally {
+    window.clearTimeout(slowTimer);
+  }
 }
 
 function setActiveNav(route) {
@@ -372,4 +470,4 @@ function displaySummary(value) { return String(value || "").replace(/[*_~`#>-]+/
 function snippet(text, query) { const value = String(text || ""); const idx = value.toLowerCase().indexOf(query.toLowerCase()); const start = Math.max(0, idx < 0 ? 0 : idx - 28); return value.slice(start, start + 110); }
 function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 
-init().catch((error) => { contentEl.innerHTML = `<div class="empty">页面加载失败：${escapeHtml(error.message)}</div>`; });
+init().catch((error) => renderLoadError(error, () => void init()));

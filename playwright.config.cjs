@@ -2,7 +2,7 @@ const { defineConfig } = require("@playwright/test");
 
 module.exports = defineConfig({
   testDir: "./scripts",
-  testMatch: /(?:portal-smoke|fast-detail-mobile)\.spec\.js/,
+  testMatch: /(?:portal-smoke|fast-detail-mobile|fast-index-performance)\.spec\.js/,
   timeout: 120000,
   use: {
     browserName: "chromium",
