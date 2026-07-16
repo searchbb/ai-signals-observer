@@ -114,7 +114,7 @@ function renderHome() {
     <section class="news-front">
       <div class="section-heading"><div><p class="eyebrow">今日关注</p><h3>最新 AI 资讯</h3></div><a href="#news">查看全部新闻 →</a></div>
       <div class="lead-grid">
-        ${lead ? `<a class="lead-story" href="${routeHref("news", lead.id)}"><span class="news-label">头条</span><h3>${escapeHtml(lead.title)}</h3><p>${escapeHtml(lead.summary || "来自公开信息源的最新动态。")}</p><time>${escapeHtml(formatTime(lead.publishedAt || lead.updatedAt))}</time></a>` : empty("暂无新闻。")}
+        ${lead ? `<a class="lead-story" href="${routeHref("news", lead.id)}"><span class="news-label">头条</span><h3>${escapeHtml(lead.title)}</h3><p>${escapeHtml(displaySummary(lead.summary || "来自公开信息源的最新动态。"))}</p><time>${escapeHtml(formatTime(lead.publishedAt || lead.updatedAt))}</time></a>` : empty("暂无新闻。")}
         <div class="brief-list">${briefs.map(newsBrief).join("")}</div>
       </div>
     </section>
@@ -129,7 +129,7 @@ function newsBrief(item, index) {
 }
 
 function researchCard(item) {
-  return `<a class="research-card" href="${routeHref("research", item.id)}"><span>${escapeHtml(item.category || "深度研究")}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(item.summary || "")}</p><small>${Number(item.diagramCount || 0) ? `${Number(item.diagramCount)} 张图表 · ` : ""}${escapeHtml(formatDate(item.updatedAt || item.mtime))}</small></a>`;
+  return `<a class="research-card" href="${routeHref("research", item.id)}"><span>${escapeHtml(item.category || "深度研究")}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(displaySummary(item.summary || ""))}</p><small>${Number(item.diagramCount || 0) ? `${Number(item.diagramCount)} 张图表 · ` : ""}${escapeHtml(formatDate(item.updatedAt || item.mtime))}</small></a>`;
 }
 
 function renderAssetIndex(kind, items) {
@@ -260,6 +260,7 @@ function empty(text) { return `<div class="empty">${escapeHtml(text)}</div>`; }
 function timestamp(item) { const value = Date.parse(item.publishedAt || item.updatedAt || item.mtime || item.lastUpdated || ""); return Number.isFinite(value) ? value : 0; }
 function formatTime(value) { if (!value) return "-"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN", { hour12: false }); }
 function formatDate(value) { if (!value) return "-"; const date = new Date(value); return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }); }
+function displaySummary(value) { return String(value || "").replace(/[*_~`#>-]+/g, " ").replace(/\s+/g, " ").trim(); }
 function snippet(text, query) { const value = String(text || ""); const idx = value.toLowerCase().indexOf(query.toLowerCase()); const start = Math.max(0, idx < 0 ? 0 : idx - 28); return value.slice(start, start + 110); }
 function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 

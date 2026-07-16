@@ -159,6 +159,12 @@ def summarize_markdown(raw: str, *, limit: int = 320) -> str:
     _, body = parse_front_matter(raw)
     body = re.sub(r"^#.*$", " ", body, flags=re.MULTILINE)
     body = re.sub(r"^>.*$", " ", body, flags=re.MULTILINE)
+    body = re.sub(
+        r"^(?:\*\*)?(?:Date|Status|Version|Research Report Status|Generated|Method|Scope)(?:\*\*)?\s*[:：].*$",
+        " ",
+        body,
+        flags=re.MULTILINE | re.IGNORECASE,
+    )
     body = re.sub(r"!\[[^\]]*\]\([^)]+\)", " ", body)
     body = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", body)
     body = re.sub(r"[*_~`]+", " ", body)
@@ -838,6 +844,19 @@ def main() -> None:
     timeline = build_timeline(issues, cards, research, article_rows, news_rows)
 
     source_fingerprint = {
+        "generator": {
+            "version": "ai-signals-build-v3",
+            "build_site_data_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "research_manifest_sha256": hashlib.sha256(RESEARCH_MANIFEST.read_bytes()).hexdigest(),
+        },
+        "researchAssets": [
+            (
+                path.relative_to(research_asset_stage).as_posix(),
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            )
+            for path in sorted(research_asset_stage.rglob("*"))
+            if path.is_file()
+        ],
         "topics": [(item["id"], item.get("lastUpdated")) for item in topic_rows],
         "issues": [(item["id"], item.get("updatedAt") or item.get("mtime")) for item in issues],
         "cards": [(item["id"], item.get("updatedAt") or item.get("mtime")) for item in cards],
@@ -858,7 +877,7 @@ def main() -> None:
             "buildId": source_digest[:16],
             "sourceDigest": source_digest,
             "sourceRevision": repo_revision(repo_root),
-            "generatorVersion": "portal-build-v2",
+            "generatorVersion": "ai-signals-build-v3",
             "generator": "site-demo/scripts/build_site_data.py",
             "sourceRoots": {
                 "index": "data/semantic_pipeline_v2/index",
