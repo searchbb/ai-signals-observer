@@ -568,7 +568,76 @@ def _json_value(value: str, default: object) -> object:
         return default
 
 
+def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
+    projection_path = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "research_assets"
+        / "projections"
+        / "api_read_model.json"
+    )
+    if not projection_path.exists():
+        return []
+    payload = json.loads(projection_path.read_text(encoding="utf-8"))
+    result: list[dict] = []
+    for object_id, profile in sorted(dict(payload.get("profiles") or {}).items()):
+        object_data = dict((profile or {}).get("object") or {})
+        updates_24h = list(object_data.get("updates_24h") or [])
+        updates = [
+            {
+                "update_id": str(item.get("fact_id") or ""),
+                "research_object_id": object_id,
+                "event": str(item.get("statement") or ""),
+                "event_date": str(item.get("published_at") or ""),
+                "review_status": "fact_confirmed",
+                "fact_id": str(item.get("fact_id") or ""),
+                "evidence_id": str(item.get("evidence_id") or ""),
+            }
+            for item in updates_24h
+        ]
+        update_html = "".join(
+            (
+                "<section class='value-change'>"
+                f"<h3>{escape(str(item.get('statement') or '研究对象更新'))}</h3>"
+                f"<p><strong>记录时间：</strong>{escape(str(item.get('published_at') or ''))}</p>"
+                "</section>"
+            )
+            for item in updates_24h[:20]
+        )
+        result.append(
+            {
+                "id": object_id,
+                "type": "object",
+                "title": str(object_data.get("name") or object_id),
+                "status": str(object_data.get("status") or "active"),
+                "category": str(object_data.get("kind") or "研究对象"),
+                "summary": str(object_data.get("description") or ""),
+                "updatedAt": first_nonempty(
+                    str(object_data.get("latest_update_at") or ""),
+                    str(object_data.get("updated_at") or ""),
+                ),
+                "createdAt": "",
+                "objectType": str(object_data.get("kind") or ""),
+                "businessArchetype": str(
+                    object_data.get("business_archetype") or ""
+                ),
+                "attentionLevel": str(object_data.get("attention_level") or ""),
+                "strategicPosition": str(
+                    object_data.get("strategic_position") or ""
+                ),
+                "strategicThesis": "",
+                "updates": updates,
+                "facts": updates_24h,
+                "factCount": int(object_data.get("fact_count") or 0),
+                "html": update_html or "<p>尚无最近24小时正式更新记录。</p>",
+            }
+        )
+    return result
+
+
 def parse_research_objects(*, repo_root: Path) -> list[dict]:
+    canonical_objects = parse_canonical_research_objects(repo_root=repo_root)
     db_path = (
         repo_root
         / "data"
@@ -577,7 +646,7 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
         / "news_value_research_cards.sqlite3"
     )
     if not db_path.exists():
-        return []
+        return canonical_objects
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         cards = connection.execute(
@@ -691,6 +760,10 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
                 "html": update_html or "<p>尚无正式更新记录。</p>",
             }
         )
+    existing_ids = {str(item["id"]) for item in result}
+    result.extend(
+        item for item in canonical_objects if str(item["id"]) not in existing_ids
+    )
     return result
 
 
