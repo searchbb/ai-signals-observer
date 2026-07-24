@@ -9,7 +9,7 @@ import sqlite3
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from html import unescape
+from html import escape, unescape
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import urlparse
@@ -561,6 +561,209 @@ def parse_news_rows(*, repo_root: Path, article_ids: set[str], limit: int) -> tu
     return news_rows, total_count
 
 
+def _json_value(value: str, default: object) -> object:
+    try:
+        return json.loads(value) if value else default
+    except json.JSONDecodeError:
+        return default
+
+
+def parse_research_objects(*, repo_root: Path) -> list[dict]:
+    db_path = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "loop_engineering"
+        / "news_value_research_cards.sqlite3"
+    )
+    if not db_path.exists():
+        return []
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        cards = connection.execute(
+            """
+            SELECT research_object_id, object_type, canonical_name, scope, category,
+                   business_archetype, description, strategic_thesis, status,
+                   attention_level, strategic_position, created_at, updated_at
+            FROM research_cards
+            ORDER BY datetime(updated_at) DESC, canonical_name
+            """
+        ).fetchall()
+        updates = connection.execute(
+            """
+            SELECT update_id, research_object_id, event, event_date, impact_type,
+                   before_state, after_state, direction, importance, review_status,
+                   fact_id, evidence_id, created_at
+            FROM research_updates
+            WHERE review_status IN ('approved', 'fact_confirmed')
+            ORDER BY datetime(created_at) DESC, update_id
+            """
+        ).fetchall()
+        facts = connection.execute(
+            """
+            SELECT fact_id, research_object_id, fact_category, fact_subject, statement,
+                   value_json, unit, currency, event_time, effective_period, published_at,
+                   source_grade, source_url, status, version, is_current, created_at
+            FROM fact_updates
+            WHERE is_current=1
+            ORDER BY datetime(created_at) DESC, fact_id
+            """
+        ).fetchall()
+        evidence = {
+            str(row["evidence_id"]): dict(row)
+            for row in connection.execute(
+                """
+                SELECT evidence_id, source_type, source_name, source_grade, source_url,
+                       published_at, source_quote, locator, article_id, verification_status
+                FROM evidence_cards
+                """
+            ).fetchall()
+        }
+    updates_by_object: dict[str, list[dict]] = {}
+    for row in updates:
+        item = dict(row)
+        evidence_item = evidence.get(str(item.get("evidence_id") or ""), {})
+        item["evidence"] = {
+            key: evidence_item.get(key, "")
+            for key in (
+                "source_name",
+                "source_grade",
+                "source_url",
+                "published_at",
+                "source_quote",
+                "locator",
+                "article_id",
+                "verification_status",
+            )
+        }
+        updates_by_object.setdefault(str(row["research_object_id"]), []).append(item)
+    facts_by_object: dict[str, list[dict]] = {}
+    for row in facts:
+        item = dict(row)
+        item["value"] = _json_value(str(item.pop("value_json") or ""), {})
+        facts_by_object.setdefault(str(row["research_object_id"]), []).append(item)
+
+    result: list[dict] = []
+    for row in cards:
+        object_id = str(row["research_object_id"])
+        object_updates = updates_by_object.get(object_id, [])
+        object_facts = facts_by_object.get(object_id, [])
+        latest_update = first_nonempty(
+            str(object_updates[0].get("created_at") or "") if object_updates else "",
+            str(row["updated_at"] or ""),
+        )
+        update_html = "".join(
+            (
+                "<section class='value-change'>"
+                f"<h3>{escape(str(item.get('event') or '研究对象更新'))}</h3>"
+                f"<p><strong>变化方向：</strong>{escape(str(item.get('direction') or ''))}"
+                f" · <strong>重要性：</strong>{int(item.get('importance') or 0)}</p>"
+                f"<p><strong>原状态：</strong>{escape(str(item.get('before_state') or '此前未记录'))}</p>"
+                f"<p><strong>新状态：</strong><mark>{escape(str(item.get('after_state') or ''))}</mark></p>"
+                f"<p><strong>证据：</strong><a href='{escape(str((item.get('evidence') or {}).get('source_url') or ''))}' "
+                "target='_blank' rel='noreferrer'>"
+                f"{escape(str((item.get('evidence') or {}).get('source_name') or '公开来源'))} ↗</a></p>"
+                "</section>"
+            )
+            for item in object_updates[:20]
+        )
+        result.append(
+            {
+                "id": object_id,
+                "type": "object",
+                "title": str(row["canonical_name"]),
+                "status": str(row["status"] or "tracking"),
+                "category": first_nonempty(str(row["category"] or ""), str(row["object_type"] or "")),
+                "summary": first_nonempty(
+                    str(row["description"] or ""),
+                    str(row["strategic_thesis"] or ""),
+                    str(row["scope"] or ""),
+                ),
+                "updatedAt": latest_update,
+                "createdAt": str(row["created_at"] or ""),
+                "objectType": str(row["object_type"] or ""),
+                "businessArchetype": str(row["business_archetype"] or ""),
+                "attentionLevel": str(row["attention_level"] or ""),
+                "strategicPosition": str(row["strategic_position"] or ""),
+                "strategicThesis": str(row["strategic_thesis"] or ""),
+                "updates": object_updates,
+                "facts": object_facts,
+                "html": update_html or "<p>尚无正式更新记录。</p>",
+            }
+        )
+    return result
+
+
+def parse_strategic_signals(*, repo_root: Path) -> list[dict]:
+    db_path = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "loop_engineering"
+        / "news_value_signal_registry.sqlite3"
+    )
+    if not db_path.exists():
+        return []
+    with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
+        connection.row_factory = sqlite3.Row
+        rows = connection.execute(
+            """
+            SELECT signal_id, hypothesis_id, hypothesis_title, delta_direction,
+                   prior_view, new_evidence, updated_view, counterevidence_or_limit,
+                   follow_up_question, confidence, source_grade, source_url,
+                   source_article_ids_json, evidence_refs_json, review_reason,
+                   signal_date, created_at, updated_at
+            FROM news_value_signal_registry
+            ORDER BY datetime(created_at) DESC, signal_id
+            """
+        ).fetchall()
+    result: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        signal_id = str(item["signal_id"])
+        source_url = str(item["source_url"] or "")
+        body = (
+            "<section class='value-change signal-change'>"
+            f"<p><strong>变化方向：</strong>{escape(str(item['delta_direction']))}"
+            f" · <strong>置信度：</strong>{float(item['confidence']):.0%}</p>"
+            f"<h3>原判断</h3><p>{escape(str(item['prior_view']))}</p>"
+            f"<h3>新判断</h3><p><mark>{escape(str(item['updated_view']))}</mark></p>"
+            f"<h3>新增证据</h3><p>{escape(str(item['new_evidence']))}</p>"
+            f"<h3>限制与反证</h3><p>{escape(str(item['counterevidence_or_limit']))}</p>"
+            f"<h3>后续问题</h3><p>{escape(str(item['follow_up_question']))}</p>"
+            f"<p><a href='{escape(source_url)}' target='_blank' rel='noreferrer'>查看公开来源 ↗</a></p>"
+            "</section>"
+        )
+        result.append(
+            {
+                "id": signal_id,
+                "type": "signal",
+                "title": str(item["hypothesis_title"]),
+                "status": "published",
+                "summary": str(item["updated_view"]),
+                "updatedAt": first_nonempty(str(item["updated_at"] or ""), str(item["created_at"] or "")),
+                "createdAt": str(item["created_at"] or ""),
+                "hypothesisId": str(item["hypothesis_id"]),
+                "deltaDirection": str(item["delta_direction"]),
+                "priorView": str(item["prior_view"]),
+                "newEvidence": str(item["new_evidence"]),
+                "updatedView": str(item["updated_view"]),
+                "counterevidenceOrLimit": str(item["counterevidence_or_limit"]),
+                "followUpQuestion": str(item["follow_up_question"]),
+                "confidence": float(item["confidence"]),
+                "sourceGrade": str(item["source_grade"]),
+                "sourceId": urlparse(source_url).netloc.removeprefix("www."),
+                "url": source_url,
+                "sourceArticleIds": _json_value(str(item["source_article_ids_json"] or ""), []),
+                "evidenceRefs": _json_value(str(item["evidence_refs_json"] or ""), []),
+                "reviewReason": str(item["review_reason"]),
+                "signalDate": str(item["signal_date"]),
+                "html": body,
+            }
+        )
+    return result
+
+
 def research_candidates(
     repo_root: Path,
     manifest_path: Path = RESEARCH_MANIFEST,
@@ -948,6 +1151,8 @@ def main() -> None:
         article_ids={item["id"] for item in articles},
         limit=max(1, args.news_window),
     )
+    research_objects = parse_research_objects(repo_root=repo_root)
+    strategic_signals = parse_strategic_signals(repo_root=repo_root)
 
     # Public output keeps only repository-relative references. Absolute local paths
     # and the workstation root must never be exposed by the public portal.
@@ -979,7 +1184,9 @@ def main() -> None:
     latest_mtime = max(
         [item.get("updatedAt") or item["mtime"] for item in issues + cards + research]
         + [item.get("updatedAt") or "" for item in articles]
-        + [item.get("updatedAt") or "" for item in news],
+        + [item.get("updatedAt") or "" for item in news]
+        + [item.get("updatedAt") or "" for item in research_objects]
+        + [item.get("updatedAt") or "" for item in strategic_signals],
         default=datetime.now(tz=timezone.utc).isoformat(),
     )
     article_rows = articles
@@ -1007,6 +1214,8 @@ def main() -> None:
         "research": [(item["id"], item.get("mtime")) for item in research],
         "articles": [(item["id"], item.get("updatedAt")) for item in article_rows],
         "news": [(item["id"], item.get("updatedAt"), item.get("status")) for item in news_rows],
+        "objects": [(item["id"], item.get("updatedAt")) for item in research_objects],
+        "signals": [(item["id"], item.get("updatedAt")) for item in strategic_signals],
         "newsTotalCount": news_total_count,
     }
     source_digest = hashlib.sha256(
@@ -1029,6 +1238,8 @@ def main() -> None:
                 "research": ["research", "data/semantic_pipeline_v2/research_packs"],
                 "articles": "data/semantic_pipeline_v2/articles",
                 "news_db": "data/news_library/news_library.sqlite3",
+                "research_object_db": "data/semantic_pipeline_v2/loop_engineering/news_value_research_cards.sqlite3",
+                "strategic_signal_db": "data/semantic_pipeline_v2/loop_engineering/news_value_signal_registry.sqlite3",
             },
             "notes": [
                 "Research reports are selected through an explicit publication manifest; process artifacts are excluded.",
@@ -1050,6 +1261,8 @@ def main() -> None:
             "research": len(research),
             "articles": len(article_rows),
             "news": news_total_count,
+            "objects": len(research_objects),
+            "signals": len(strategic_signals),
             "relations": len(relations),
             "activeIssues": active_issues,
             "provisionalIssues": provisional_issues,
@@ -1062,6 +1275,8 @@ def main() -> None:
             "research": research,
             "articles": article_rows,
             "news": news_rows,
+            "objects": research_objects,
+            "signals": strategic_signals,
         },
         "newsMeta": {
             "strategy": "bounded_recent_window",

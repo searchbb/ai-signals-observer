@@ -10,8 +10,32 @@ from pathlib import Path
 
 
 SITE_ROOT = Path(__file__).resolve().parents[1]
-FORBIDDEN_ITEM_FIELDS = {"html", "text", "path", "url"}
-SUMMARY_LIMITS = {"articles": 0, "news": 240, "research": 600, "issues": 600, "cards": 600, "topics": 600}
+FORBIDDEN_ITEM_FIELDS = {
+    "html",
+    "text",
+    "path",
+    "url",
+    "updates",
+    "facts",
+    "priorView",
+    "newEvidence",
+    "updatedView",
+    "counterevidenceOrLimit",
+    "followUpQuestion",
+    "sourceArticleIds",
+    "evidenceRefs",
+    "reviewReason",
+}
+SUMMARY_LIMITS = {
+    "articles": 0,
+    "news": 240,
+    "research": 600,
+    "issues": 600,
+    "cards": 600,
+    "topics": 600,
+    "objects": 360,
+    "signals": 360,
+}
 
 
 def main() -> int:

@@ -25,6 +25,8 @@ const ROUTES = {
   research: "research",
   article: "articles",
   news: "news",
+  object: "objects",
+  signal: "signals",
 };
 
 function routeParts() {
@@ -40,7 +42,7 @@ function updateRouteMode() {
 function emptyPortalData(type, item) {
   const data = {
     stats: {}, newsMeta: {}, relations: [], timeline: [],
-    topics: [], issues: [], cards: [], research: [], articles: [], news: [],
+    topics: [], issues: [], cards: [], research: [], articles: [], news: [], objects: [], signals: [],
   };
   data[ROUTES[type]] = [item];
   return data;
@@ -80,7 +82,7 @@ function emptyData() {
 function mergeData(raw) {
   const incoming = normalizeData(raw);
   if (!state.data) state.data = emptyData();
-  for (const name of ["topics", "issues", "cards", "research", "articles", "news"]) {
+  for (const name of ["topics", "issues", "cards", "research", "articles", "news", "objects", "signals"]) {
     if (Object.hasOwn(raw.collections || raw, name)) state.data[name] = incoming[name];
   }
   for (const name of ["stats", "newsMeta", "relations", "timeline", "buildMeta", "generatedAt"]) {
@@ -212,6 +214,8 @@ function normalizeData(raw) {
     research: collections.research || raw.research || [],
     articles: collections.articles || raw.articles || [],
     news: collections.news || raw.news || [],
+    objects: collections.objects || raw.objects || [],
+    signals: collections.signals || raw.signals || [],
     relations: raw.relations || [],
     timeline: raw.timeline || [],
   };
@@ -265,6 +269,8 @@ function renderStats() {
     ["分析卡片", stats.issues, "issues"],
     ["综合研判", stats.cards, "cards"],
     ["文章解读", stats.articles, "articles"],
+    ["研究对象", stats.objects, "objects"],
+    ["战略信号", stats.signals, "signals"],
   ];
   statsEl.innerHTML = `
     <p class="stats-title">内容规模</p>
@@ -543,6 +549,8 @@ function renderDetail(type, item) {
       </div>
       ${item.canonicalQuestion ? `<div class="question"><strong>核心问题</strong><p>${escapeHtml(item.canonicalQuestion)}</p></div>` : ""}
       ${item.summary && type !== "research" ? `<div class="summary"><strong>内容摘要</strong><p>${escapeHtml(item.summary)}</p></div>` : ""}
+      ${type === "object" && item.strategicThesis ? `<div class="question"><strong>当前研究判断</strong><p>${escapeHtml(item.strategicThesis)}</p></div>` : ""}
+      ${type === "signal" ? `<div class="meta-strip"><span>变化方向 ${escapeHtml(signalDirectionLabel(item.deltaDirection))}</span><span>置信度 ${Math.round(Number(item.confidence || 0) * 100)}%</span></div>` : ""}
       <div class="pill-row">
         ${item.url ? `<a class="pill" href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">查看公开原文 ↗</a>` : ""}
         ${item.articleId ? `<a class="pill" href="${routeHref("article", item.articleId)}">查看文章解读</a>` : ""}
@@ -649,7 +657,7 @@ function relatedAssets(type, id) {
 }
 
 function renderTimeline() {
-  const types = ["all", "news", "research", "article", "issue", "card"];
+  const types = ["all", "news", "research", "article", "issue", "card", "object", "signal"];
   const eventTypes = ["all", "new", "updated"];
   const filtered = state.data.timeline.filter((item) => (state.timelineType === "all" || item.type === state.timelineType) && (state.timelineEvent === "all" || item.eventType === state.timelineEvent));
   contentEl.innerHTML = `<section class="list-panel index-page"><div class="section-heading"><div><p class="eyebrow">更新记录</p><h3>近期内容变化</h3></div></div><div class="filter-stack"><div class="filter-row">${types.map((type) => `<button class="filter ${state.timelineType === type ? "active" : ""}" data-type="${type}">${type === "all" ? "全部类型" : typeLabel(type)}</button>`).join("")}</div><div class="filter-row">${eventTypes.map((eventType) => `<button class="filter ${state.timelineEvent === eventType ? "active" : ""}" data-event-type="${eventType}">${timelineEventFilterLabel(eventType)}</button>`).join("")}</div></div><div class="editorial-list">${filtered.slice(0, 300).map(timelineRow).join("") || empty("该类型暂无更新。")}</div></section>`;
@@ -675,7 +683,8 @@ function timelineStatusText(item) { return item.sourceStatus ? statusLabel(item.
 function sourceLabel(value) { return String(value || "公开信息").replace(/^www\./, ""); }
 function statusLabel(status) { return ({ active: "持续关注", provisional: "观察中", published: "已发布", digested: "已解读", digest_ready: "已完成解读", new: "最新入库", raw: "待解读" })[status] || status || ""; }
 function relationLabel(value) { return ({ topic_issue_declared: "所属专题", topic_issue_active: "持续跟踪", topic_card_related: "相关分析", topic_research_related: "相关研究", issue_topic_parent: "所属专题", card_topic_parent: "所属专题", research_topic_parent: "所属专题", news_article_materialized: "已形成解读", issue_article_evidence: "参考文章", card_article_evidence: "参考文章", research_article_evidence: "参考文章" })[value] || "相关内容"; }
-function typeLabel(type) { return ({ topic: "专题观察", topics: "专题观察", issue: "分析卡片", issues: "分析卡片", card: "综合研判", cards: "综合研判", research: "深度研究", article: "文章解读", articles: "文章解读", news: "新闻资讯" })[type] || type || "内容"; }
+function typeLabel(type) { return ({ topic: "专题观察", topics: "专题观察", issue: "分析卡片", issues: "分析卡片", card: "综合研判", cards: "综合研判", research: "深度研究", article: "文章解读", articles: "文章解读", news: "新闻资讯", object: "研究对象", objects: "研究对象", signal: "战略信号", signals: "战略信号" })[type] || type || "内容"; }
+function signalDirectionLabel(value) { return ({ INVALIDATE: "推翻", NEW_FACTOR: "新增因素", WEAKEN: "削弱", STRENGTHEN: "强化" })[value] || value || "变化"; }
 function renderMissing() { contentEl.innerHTML = empty("没有找到对应内容，请从左侧栏目或搜索框继续查找。"); }
 function empty(text) { return `<div class="empty">${escapeHtml(text)}</div>`; }
 function timestamp(item) { const value = Date.parse(item.publishedAt || item.updatedAt || item.mtime || item.lastUpdated || ""); return Number.isFinite(value) ? value : 0; }

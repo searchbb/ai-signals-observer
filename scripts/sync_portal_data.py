@@ -28,18 +28,46 @@ DETAIL_COLLECTION_TYPES = {
     "research": "research",
     "articles": "article",
     "news": "news",
+    "objects": "object",
+    "signals": "signal",
 }
 URL_SAFE_FILENAME_CHARS = "-_.!~*'()"
-INDEX_DETAIL_ONLY_FIELDS = {"html", "text", "path", "url"}
+INDEX_DETAIL_ONLY_FIELDS = {
+    "html",
+    "text",
+    "path",
+    "url",
+    "updates",
+    "facts",
+    "priorView",
+    "newEvidence",
+    "updatedView",
+    "counterevidenceOrLimit",
+    "followUpQuestion",
+    "sourceArticleIds",
+    "evidenceRefs",
+    "reviewReason",
+}
 INDEX_SUMMARY_LIMITS = {
     "articles": 0,
     "news": 240,
+    "objects": 360,
+    "signals": 360,
     "research": 600,
     "issues": 600,
     "cards": 600,
     "topics": 600,
 }
-ROUTE_COLLECTIONS = ("topics", "issues", "cards", "research", "articles", "news")
+ROUTE_COLLECTIONS = (
+    "topics",
+    "issues",
+    "cards",
+    "research",
+    "articles",
+    "news",
+    "objects",
+    "signals",
+)
 HOME_STATS_START = "<!-- HOME_STATS_START -->"
 HOME_STATS_END = "<!-- HOME_STATS_END -->"
 HOME_CONTENT_START = "<!-- HOME_CONTENT_START -->"
@@ -235,6 +263,8 @@ def render_home_bootstrap(home_payload: dict[str, object]) -> tuple[str, str]:
         ("分析卡片", stats.get("issues", 0)),
         ("综合研判", stats.get("cards", 0)),
         ("文章解读", stats.get("articles", 0)),
+        ("研究对象", stats.get("objects", 0)),
+        ("战略信号", stats.get("signals", 0)),
     ]
     stats_html = "\n          ".join(
         ["<p class=\"stats-title\">内容规模</p>"]
@@ -492,6 +522,90 @@ def validate_count_changes(*, before_path: Path, after_path: Path, max_drop_rati
             )
 
 
+def preserve_existing_collections(
+    *, before_path: Path, after_path: Path, collection_names: list[str]
+) -> dict[str, int]:
+    """Merge selected public rows forward when the local workspace is incomplete.
+
+    New rows win by id.  This mode is intentionally explicit and is used by the
+    hourly value-mail publisher so an unrelated local asset cleanup cannot
+    delete previously published article pages.
+    """
+    if not before_path.exists() or not collection_names:
+        return {}
+    before = json.loads(before_path.read_text(encoding="utf-8"))
+    after = json.loads(after_path.read_text(encoding="utf-8"))
+    before_collections = dict(before.get("collections") or {})
+    after_collections = dict(after.get("collections") or {})
+    preserved: dict[str, int] = {}
+    for name in collection_names:
+        old_rows = list(before_collections.get(name) or [])
+        new_rows = list(after_collections.get(name) or [])
+        merged = {
+            str(item.get("id") or ""): dict(item)
+            for item in old_rows
+            if str(item.get("id") or "")
+        }
+        merged.update(
+            {
+                str(item.get("id") or ""): dict(item)
+                for item in new_rows
+                if str(item.get("id") or "")
+            }
+        )
+        if not merged:
+            continue
+        rows = sorted(
+            merged.values(),
+            key=lambda item: str(
+                item.get("updatedAt")
+                or item.get("publishedAt")
+                or item.get("mtime")
+                or item.get("lastUpdated")
+                or ""
+            ),
+            reverse=True,
+        )
+        after_collections[name] = rows
+        preserved[name] = max(0, len(rows) - len(new_rows))
+        stats = dict(after.get("stats") or {})
+        if name == "news":
+            old_meta = dict(before.get("newsMeta") or {})
+            new_meta = dict(after.get("newsMeta") or {})
+            new_meta["totalCount"] = max(
+                int(old_meta.get("totalCount") or 0),
+                int(new_meta.get("totalCount") or 0),
+            )
+            new_meta["mirroredCount"] = len(rows)
+            new_meta["windowLimit"] = max(
+                len(rows),
+                int(old_meta.get("windowLimit") or 0),
+                int(new_meta.get("windowLimit") or 0),
+            )
+            after["newsMeta"] = new_meta
+            stats[name] = int(new_meta["totalCount"])
+        else:
+            stats[name] = len(rows)
+        after["stats"] = stats
+    after["collections"] = after_collections
+    build_meta = dict(after.get("buildMeta") or {})
+    build_meta["preservedCollections"] = preserved
+    digest_basis = {
+        "collections": after_collections,
+        "relations": after.get("relations") or [],
+        "timeline": after.get("timeline") or [],
+        "newsMeta": after.get("newsMeta") or {},
+    }
+    source_digest = hashlib.sha256(
+        json.dumps(digest_basis, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+    build_meta["sourceDigest"] = source_digest
+    build_meta["buildId"] = source_digest[:16]
+    after["buildMeta"] = build_meta
+    after_path.write_text(json.dumps(after, ensure_ascii=False, indent=2), encoding="utf-8")
+    return preserved
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Rebuild portal site-data.json from local KFC truth sources."
@@ -500,6 +614,12 @@ def main() -> int:
     parser.add_argument("--out", default=str(SITE_ROOT / "data" / "site-data.json"))
     parser.add_argument("--max-count-drop-ratio", type=float, default=0.05)
     parser.add_argument("--allow-count-drop", action="store_true")
+    parser.add_argument(
+        "--preserve-existing-collection",
+        action="append",
+        default=[],
+        choices=sorted(DETAIL_COLLECTION_TYPES),
+    )
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root or str(find_repo_root())).expanduser().resolve()
@@ -516,6 +636,11 @@ def main() -> int:
 
     try:
         run_build(repo_root=repo_root, out_path=temp_path)
+        preserved_collections = preserve_existing_collections(
+            before_path=out_path,
+            after_path=temp_path,
+            collection_names=list(args.preserve_existing_collection),
+        )
         validation = validate_portal_file(temp_path)
         after_sha = sha256_file(temp_path)
         summary = summarize_payload(temp_path)
@@ -558,6 +683,7 @@ def main() -> int:
         "replaced_existing": before_exists,
         "changed": before_sha != after_sha,
         "source_unchanged": source_unchanged,
+        "preserved_collections": preserved_collections,
         "before_sha256": before_sha,
         "after_sha256": after_sha,
         **summary,

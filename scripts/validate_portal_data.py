@@ -22,7 +22,16 @@ def validate_portal_file(path: Path) -> dict[str, object]:
     errors: list[str] = []
     indexes: dict[str, set[str]] = {}
     for name, rows in collections.items():
-        entity_type = {"topics": "topic", "issues": "issue", "cards": "card", "research": "research", "articles": "article", "news": "news"}[name]
+        entity_type = {
+            "topics": "topic",
+            "issues": "issue",
+            "cards": "card",
+            "research": "research",
+            "articles": "article",
+            "news": "news",
+            "objects": "object",
+            "signals": "signal",
+        }[name]
         ids = [str(row.get("id") or "") for row in rows]
         if "" in ids:
             errors.append(f"{name} contains empty id")

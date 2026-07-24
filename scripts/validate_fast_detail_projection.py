@@ -17,6 +17,8 @@ COLLECTION_TYPES = {
     "research": "research",
     "articles": "article",
     "news": "news",
+    "objects": "object",
+    "signals": "signal",
 }
 LOCAL_PATH_RE = re.compile(r"/Users/|\\Users\\|[A-Za-z]:\\")
 URL_SAFE_FILENAME_CHARS = "-_.!~*'()"

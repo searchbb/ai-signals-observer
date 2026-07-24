@@ -23,7 +23,7 @@
       (() => {
         const syncRouteMode = () => document.documentElement.classList.toggle(
           "direct-detail",
-          /^#(?:topic|issue|card|research|article|news)\/.+/.test(location.hash),
+          /^#(?:topic|issue|card|research|article|news|object|signal)\/.+/.test(location.hash),
         );
         const syncInitialRoute = () => document.documentElement.classList.toggle(
           "initial-non-home",
@@ -55,6 +55,8 @@
           <a href="#issues">分析卡片</a>
           <a href="#cards">综合研判</a>
           <a href="#articles">文章解读</a>
+          <a href="#objects">研究对象</a>
+          <a href="#signals">战略信号</a>
           <a href="#timeline">更新记录</a>
           <a href="#home">首页</a>
         </nav>
@@ -91,15 +93,17 @@
           <div class="stat"><p>专题观察</p><strong>16</strong></div>
           <div class="stat"><p>分析卡片</p><strong>156</strong></div>
           <div class="stat"><p>综合研判</p><strong>7</strong></div>
-          <div class="stat"><p>文章解读</p><strong>1,092</strong></div>
+          <div class="stat"><p>文章解读</p><strong>1,175</strong></div>
+          <div class="stat"><p>研究对象</p><strong>83</strong></div>
+          <div class="stat"><p>战略信号</p><strong>40</strong></div>
           <!-- HOME_STATS_END -->
         </section>
         <section id="content" class="content-panel">
           <!-- HOME_CONTENT_START -->
-          <div class="bootstrap-home" data-home-bootstrap data-generated-at="2026-07-22T02:03:42.571641+00:00">
+          <div class="bootstrap-home" data-home-bootstrap data-generated-at="2026-07-24T01:34:06.165651+00:00">
             <section class="news-front">
               <div class="section-heading"><div><p class="eyebrow">今日关注</p><h3>最新 AI 资讯</h3></div><a href="#news">查看全部新闻 →</a></div>
-              <div class="lead-grid"><a class="lead-story" href="#news/cand-candidate_2d09bff82027ad50711fcf65"><span class="news-label">头条</span><h3>韩媒：三星电子会长、SK集团会长将与黄仁勋会面-36氪</h3><p>据报道，三星电子会长李在镕、SK集团会长崔泰源、NAVER董事会主席李海珍近期将在美国与英伟达首席执行官黄仁勋举行圆桌对话。据悉，圆桌对话很可能于24日在硅谷附近举行。（第一财经）原文链接 36氪获悉，滔搏在港交所公告，于7月21日交易时段后，本集团收到耐克的正式通知，本集团目前在中国内地的耐克产品线上平台销售将于2027年1月1日起全面终止。公司董事会预计，鉴于截至2026年2月28日止财政年度来自耐克产品线上平台销售的收入贡献约占本集团总收入的22%，该终止将在短期内对…</p><time>2026-07-22 09:26</time></a><div class="brief-list"><a class="news-brief" href="#news/cand-candidate_8f13a986035af041e3995050"><span>02</span><div><strong>两市融资余额增加0.62亿元-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_1e9a00e3566e69529172840f"><span>03</span><div><strong>Novo Tellus联合RCF与NRFC完成对锐速矿业设备公司的收购-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_6a33dd26b77f8cf7319785a4"><span>04</span><div><strong>极佳视界回应IPO传闻：相关报道系误读-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_cddb8ea5257d2d74aae07233"><span>05</span><div><strong>耐克：将以官方旗舰店以及Nike官方网站和App为核心，重新打造在中国的数字市场生态-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_499a9c688269230d2e45a1d4"><span>06</span><div><strong>7月22日人民币对美元中间价调贬16个基点-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_81994294a8f207e4201a77c7"><span>07</span><div><strong>恒指开盘跌0.61%，恒生科技指数跌0.71%-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_5ce6bf9925a88b09d42a2f1b"><span>08</span><div><strong>央行今日开展760亿元7天期逆回购操作-36氪</strong><small>36kr.com · 2026-07-22</small></div></a><a class="news-brief" href="#news/cand-candidate_e4296032b5d5ba14f40cd880"><span>09</span><div><strong>Denodo 9.5 增加了 AI 数据治理的指标视图</strong><small>securitybrief.com.au · 2026-07-22</small></div></a></div></div>
+              <div class="lead-grid"><a class="lead-story" href="#news/news_33a8e21603547880dd71"><span class="news-label">头条</span><h3>重构（配置）：废弃冗余设置（#113174）</h3><p>重构（配置）：废弃冗余设置（ 113174）。包括：重构配置以废弃冗余设置；应用当前代码格式化；更新插件 SDK 基线；使 Codex 工具上限保持上下文感知；移除过期导入；同步 WhatsApp QA 防抖配置；清理已废弃的配置检查；同步 CI 的配置清理检查。</p><time>2026-07-24 08:45</time></a><div class="brief-list"><a class="news-brief" href="#news/news_5f171584726440e7cbc5"><span>02</span><div><strong>改进（界面）：将侧边栏底部统一为整宽身份卡片（#113156）</strong><small>github.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_0c6774869e24cc4ce874"><span>03</span><div><strong>重构（自动回复）：对入站文本进行一次规范化处理 (#113179)</strong><small>github.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_06f0c10d32e4b856d647"><span>04</span><div><strong>AMD 第二代 AI 服务器 Helios 已投产，搭载 MI455X 加速器</strong><small>techflowpost.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_6eade76037c606faa0f9"><span>05</span><div><strong>Hyperliquid 单周 RWA 交易量首超加密资产，占总永续合约交易量 54%</strong><small>techflowpost.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_636e975eadd5a51787dc"><span>06</span><div><strong>巴西奶牛首次上链：农民以代币化牲畜为抵押在 B3 交易所完成融资</strong><small>techflowpost.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_c82369e852c6815fdcb6"><span>07</span><div><strong>MoonPay 接入 Discover Network，美国用户可用 Discover 卡购买加密资产</strong><small>techflowpost.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_0bc296bdf5db85f607e1"><span>08</span><div><strong>Bitwise 发布 2026年 Q3 质押报告：各主链活跃度上升但收入普遍下滑，机构入场成核心主题</strong><small>techflowpost.com · 2026-07-24</small></div></a><a class="news-brief" href="#news/news_97233b95e77211bdfd56"><span>09</span><div><strong>CFTC 延长 24/7 期货交易及能源商品永续合约征求意见期限至 8 月 26 日</strong><small>techflowpost.com · 2026-07-24</small></div></a></div></div>
             </section>
             <section class="research-front">
               <div class="section-heading"><div><p class="eyebrow">趋势与洞察</p><h3>深度研究</h3></div><a href="#research">查看全部 10 份研究 →</a></div>
@@ -126,7 +130,7 @@
     </div>
     <script>
       (() => {
-        const match = location.hash.match(/^#(topic|issue|card|research|article|news)\/(.+)$/);
+        const match = location.hash.match(/^#(topic|issue|card|research|article|news|object|signal)\/(.+)$/);
         if (!match) return;
         const type = match[1];
         const id = decodeURIComponent(match[2]);
@@ -134,6 +138,7 @@
         const labels = {
           topic: "专题观察", issue: "分析卡片", card: "综合研判",
           research: "深度研究", article: "文章解读", news: "新闻资讯",
+          object: "研究对象", signal: "战略信号",
         };
 
         const loading = document.createElement("section");

@@ -41,13 +41,17 @@ def git(*args: str, cwd: Path = SITE_ROOT, check: bool = True) -> subprocess.Com
     )
 
 
-def sync_site_data(*, repo_root: Path, python_bin: str) -> dict[str, object]:
+def sync_site_data(
+    *, repo_root: Path, python_bin: str, preserve_existing_collections: list[str]
+) -> dict[str, object]:
     command = [
         python_bin,
         str(SITE_ROOT / "scripts" / "sync_portal_data.py"),
         "--repo-root",
         str(repo_root),
     ]
+    for collection in preserve_existing_collections:
+        command.extend(["--preserve-existing-collection", collection])
     run = subprocess.run(command, check=True, text=True, capture_output=True)
     return json.loads(run.stdout)
 
@@ -152,7 +156,16 @@ def detail_sample_hashes(manifest_path: Path) -> dict[str, str]:
         samples[f"{detail_type}:path"] = f"data/{relative_path}"
     return {
         samples[f"{detail_type}:path"]: samples[detail_type]
-        for detail_type in ("topic", "issue", "card", "research", "article", "news")
+        for detail_type in (
+            "topic",
+            "issue",
+            "card",
+            "research",
+            "article",
+            "news",
+            "object",
+            "signal",
+        )
         if detail_type in samples and f"{detail_type}:path" in samples
     }
 
@@ -326,6 +339,12 @@ def main() -> int:
     parser.add_argument("--push-sleep-seconds", type=int, default=5)
     parser.add_argument("--push-timeout-seconds", type=int, default=90)
     parser.add_argument("--lock-timeout-seconds", type=int, default=300)
+    parser.add_argument(
+        "--preserve-existing-collection",
+        action="append",
+        default=[],
+        choices=("topics", "issues", "cards", "research", "articles", "news", "objects", "signals"),
+    )
     args = parser.parse_args()
 
     lock_path = SITE_ROOT / ".git" / "portal-publish.lock"
@@ -341,7 +360,11 @@ def main() -> int:
             time.sleep(1)
 
     repo_root = Path(args.repo_root or str(find_repo_root())).expanduser().resolve()
-    sync_result = sync_site_data(repo_root=repo_root, python_bin=args.python_bin)
+    sync_result = sync_site_data(
+        repo_root=repo_root,
+        python_bin=args.python_bin,
+        preserve_existing_collections=list(args.preserve_existing_collection),
+    )
     site_data_path = SITE_ROOT / "data" / "site-data.json"
     site_data_sha = sha256_file(site_data_path)
     site_index_path = SITE_ROOT / "data" / "site-index.json"

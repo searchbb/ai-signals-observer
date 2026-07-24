@@ -21,7 +21,7 @@ test.afterEach(async ({ page }) => {
 });
 
 test("all production entrances render real data", async ({ page }) => {
-  for (const route of ["home", "topics", "issues", "cards", "research", "articles", "news", "timeline"]) {
+  for (const route of ["home", "topics", "issues", "cards", "research", "articles", "news", "objects", "signals", "timeline"]) {
     await page.goto(`${baseURL}#${route}`);
     await expect(page.locator("#content h3").first()).toBeVisible();
     await expect(page.locator("#content")).not.toContainText("站点初始化失败");
@@ -85,7 +85,7 @@ test("navigation has one primary path and a mobile-safe overview", async ({ page
 });
 
 test("all seven detail protocols open the expected asset", async ({ page }) => {
-  const cases = [["topic", data.topics[0]], ["issue", data.issues[0]], ["card", data.cards[0]], ["research", data.research[0]], ["article", data.articles[0]], ["news", data.news[0]]];
+  const cases = [["topic", data.topics[0]], ["issue", data.issues[0]], ["card", data.cards[0]], ["research", data.research[0]], ["article", data.articles[0]], ["news", data.news[0]], ["object", data.objects[0]], ["signal", data.signals[0]]];
   for (const [type, item] of cases) {
     await page.goto(`${baseURL}#${type}/${encodeURIComponent(item.id)}`);
     await expect(page.locator("#content h3").first()).toHaveText(item.title);

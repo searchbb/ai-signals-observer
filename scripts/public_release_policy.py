@@ -47,7 +47,7 @@ def publication_violations(collection: str, item: dict) -> list[str]:
     if collection == "articles" and not str(item.get("url") or "").startswith(("http://", "https://")):
         violations.append("article_missing_public_source_url")
     serialized = json.dumps(item, ensure_ascii=False)
-    if collection in {"issues", "cards", "research", "articles"}:
+    if collection in {"issues", "cards", "research", "articles", "objects", "signals"}:
         lowered = serialized.lower()
         for index, marker in enumerate(STRICT_VISIBLE_MARKERS, start=1):
             if marker.lower() in lowered:

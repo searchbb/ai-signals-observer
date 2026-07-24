@@ -5,6 +5,8 @@ const TYPE_ALIASES = {
   research: ["research", "researches", "research pack", "研究", "研报", "报告"],
   article: ["article", "articles", "文章", "稿件"],
   news: ["news", "新闻", "资讯", "新闻库"],
+  object: ["object", "research object", "研究对象", "公司卡片", "行业卡片"],
+  signal: ["signal", "strategic signal", "战略信号", "战略观点"],
 };
 
 const TYPE_WEIGHTS = {
@@ -14,6 +16,8 @@ const TYPE_WEIGHTS = {
   topic: 96,
   article: 72,
   news: 64,
+  object: 116,
+  signal: 124,
 };
 
 export function searchRoute(item) {
@@ -122,6 +126,8 @@ function buildSearchPool(data) {
     ...(data.research || []),
     ...(data.articles || []),
     ...(data.news || []),
+    ...(data.objects || []),
+    ...(data.signals || []),
   ];
 }
 

@@ -345,6 +345,10 @@ button, input { font: inherit; }
 .report-body article th { background: var(--navy); color: white; }
 .report-body article pre { overflow: auto; padding: 15px; background: #101b2b; color: #edf4fb; font-family: "SFMono-Regular", Consolas, monospace; font-size: .85rem; }
 .report-body article img { display: block; max-width: 100%; height: auto; margin: 22px auto; }
+.value-change { margin: 0 0 18px; padding: 18px; border-left: 4px solid #2563eb; background: #f8fbff; }
+.value-change + .value-change { border-top: 1px solid #dbe7f3; }
+.signal-change { border-left-color: #ea580c; background: #fffaf5; }
+.value-change mark { padding: 2px 5px; color: #14532d; background: #dcfce7; }
 .analysis-card-body { max-width: 1020px!important; font-family: "Noto Sans SC", "PingFang SC", sans-serif!important; }
 .analysis-card-body > h1 {
   margin: 0 0 22px!important;
