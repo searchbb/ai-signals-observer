@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from difflib import SequenceMatcher
 from html import escape, unescape
 from pathlib import Path
 from typing import Iterable
@@ -568,6 +569,241 @@ def _json_value(value: str, default: object) -> object:
         return default
 
 
+STRATEGIC_OBJECT_TERMS = (
+    "营收",
+    "收入",
+    "利润",
+    "毛利",
+    "成本",
+    "价格",
+    "客户",
+    "用户",
+    "订单",
+    "积压",
+    "商业化",
+    "资本开支",
+    "算力",
+    "token",
+    "吞吐",
+    "产能",
+    "市场份额",
+    "合作",
+    "伙伴",
+    "收购",
+    "监管",
+    "治理",
+    "安全事件",
+    "revenue",
+    "margin",
+    "cost",
+    "customer",
+    "backlog",
+    "commercial",
+    "capex",
+    "partnership",
+    "acquisition",
+)
+MICRO_OBJECT_TERMS = (
+    "语言支持",
+    "language support",
+    "连接器",
+    "connector",
+    "菜单",
+    "menu",
+    "套餐可用",
+    "套餐开放",
+    "plan availability",
+    "语音模式",
+    "voice mode",
+    "语音合成",
+    "text-to-speech",
+    "tts",
+    "gmail",
+    "slack",
+    "benchmark",
+    "基准",
+    "榜单",
+    "排行榜",
+    "字体",
+    "font",
+    "菜单路径",
+    "点击路径",
+    "按住说话",
+    "参数规模",
+    "parameter count",
+    "fp32",
+    "fp16",
+    "fp8",
+    "fp4",
+    "数据精度",
+    "显存规模",
+    "单实例",
+    "gb/s",
+    "health 集成",
+    "health integration",
+    "集成预计",
+    "面向客户开放",
+)
+STRATEGIC_BLOCK_WEIGHTS = {
+    "unit_economics": 60,
+    "business_model": 48,
+    "resource_control": 44,
+    "strategic_judgment": 42,
+    "relationships": 34,
+    "key_metrics": 30,
+    "control_points": 28,
+    "recent_updates": 8,
+}
+STRATEGIC_ENTITY_TERMS = (
+    "openai",
+    "anthropic",
+    "amd",
+    "nvidia",
+    "英伟达",
+    "阿里云",
+    "alibaba",
+    "google",
+    "谷歌",
+    "microsoft",
+    "微软",
+    "华为",
+    "huawei",
+    "amazon",
+    "亚马逊",
+    "真武",
+    "qwen",
+)
+STRATEGIC_THEME_TERMS = {
+    "acquisition": ("收购", "acquire", "acquisition"),
+    "partnership": ("合作", "伙伴", "partnership", "agreement", "协议"),
+    "compute": (
+        "算力",
+        "gpu",
+        "芯片",
+        "chip",
+        "数据中心",
+        "infrastructure",
+        "基础设施",
+        "超节点",
+        "gw",
+        "电力",
+    ),
+    "finance": (
+        "营收",
+        "收入",
+        "利润",
+        "毛利",
+        "成本",
+        "投资",
+        "revenue",
+        "margin",
+        "cost",
+        "billion",
+        "亿美元",
+    ),
+    "adoption": ("客户", "用户", "部署", "customer", "user", "adopt", "deploy"),
+    "product": ("发布", "推出", "上线", "launch", "release"),
+    "governance": ("监管", "治理", "安全", "regulation", "governance", "security"),
+}
+
+
+def canonical_update_score(item: dict) -> int:
+    text = f"{item.get('fact_subject') or ''} {item.get('statement') or ''}".lower()
+    return (
+        STRATEGIC_BLOCK_WEIGHTS.get(str(item.get("block_id") or ""), 0)
+        + (35 if str(item.get("asset_role") or "") == "strategic_event" else 0)
+        + (28 if any(term in text for term in STRATEGIC_OBJECT_TERMS) else 0)
+        + (10 if any(char.isdigit() for char in text) else 0)
+        - (100 if any(term in text for term in MICRO_OBJECT_TERMS) else 0)
+    )
+
+
+def canonical_update_signature(item: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    text = f"{item.get('fact_subject') or ''} {item.get('statement') or ''}".lower()
+    entities = tuple(sorted(term for term in STRATEGIC_ENTITY_TERMS if term in text))
+    themes = tuple(
+        sorted(
+            theme
+            for theme, terms in STRATEGIC_THEME_TERMS.items()
+            if any(term in text for term in terms)
+        )
+    )
+    return entities, themes
+
+
+def select_strategic_object_updates(
+    updates: list[dict],
+    *,
+    limit: int = 4,
+    object_name: str = "",
+    object_aliases: list[str] | None = None,
+    object_kind: str = "",
+) -> list[dict]:
+    selected: list[dict] = []
+    normalized: list[str] = []
+    signatures: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
+    ranked = sorted(
+        updates,
+        key=lambda item: (
+            canonical_update_score(item),
+            str(item.get("published_at") or ""),
+            str(item.get("fact_id") or ""),
+        ),
+        reverse=True,
+    )
+    for item in ranked:
+        if canonical_update_score(item) < 40:
+            continue
+        statement_text = str(item.get("statement") or "")
+        lowered = statement_text.lower()
+        if object_kind == "company":
+            markers = [
+                marker
+                for marker in {
+                    str(object_name or "").lower(),
+                    *(str(alias or "").lower() for alias in (object_aliases or [])),
+                }
+                if len(marker) >= 3
+            ]
+            positions = [
+                lowered.find(marker)
+                for marker in markers
+                if lowered.find(marker) >= 0
+            ]
+            if not positions:
+                continue
+            prefix = lowered[: min(positions)]
+            if (
+                min(positions) > 60
+                or prefix.count("、") >= 2
+                or prefix.count(",") >= 2
+            ):
+                continue
+        signature = canonical_update_signature(item)
+        if (
+            "acquisition" in signature[1]
+            and any("acquisition" in prior[1] for prior in signatures)
+        ):
+            continue
+        if signature[1] and signature in signatures:
+            continue
+        statement = re.sub(r"\s+", "", lowered)
+        if not statement:
+            continue
+        if any(
+            SequenceMatcher(None, statement, prior).ratio() >= 0.72
+            for prior in normalized
+        ):
+            continue
+        selected.append(item)
+        normalized.append(statement)
+        if signature[1]:
+            signatures.add(signature)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
     projection_path = (
         repo_root
@@ -580,10 +816,42 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
     if not projection_path.exists():
         return []
     payload = json.loads(projection_path.read_text(encoding="utf-8"))
+    evidence_by_id: dict[str, dict] = {}
+    evidence_db = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "loop_engineering"
+        / "news_value_research_cards.sqlite3"
+    )
+    if evidence_db.exists():
+        with sqlite3.connect(f"file:{evidence_db}?mode=ro", uri=True) as connection:
+            connection.row_factory = sqlite3.Row
+            evidence_by_id = {
+                str(row["evidence_id"]): dict(row)
+                for row in connection.execute(
+                    """
+                    SELECT evidence_id, source_name, source_grade, source_url,
+                           published_at, source_quote, locator, article_id,
+                           verification_status
+                    FROM evidence_cards
+                    """
+                ).fetchall()
+            }
     result: list[dict] = []
     for object_id, profile in sorted(dict(payload.get("profiles") or {}).items()):
         object_data = dict((profile or {}).get("object") or {})
-        updates_24h = list(object_data.get("updates_24h") or [])
+        updates_24h = select_strategic_object_updates(
+            list(object_data.get("updates_24h") or []),
+            limit=4,
+            object_name=str(object_data.get("name") or ""),
+            object_aliases=[
+                str(item)
+                for item in object_data.get("aliases") or []
+                if str(item)
+            ],
+            object_kind=str(object_data.get("kind") or ""),
+        )
         updates = [
             {
                 "update_id": str(item.get("fact_id") or ""),
@@ -593,6 +861,21 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "review_status": "fact_confirmed",
                 "fact_id": str(item.get("fact_id") or ""),
                 "evidence_id": str(item.get("evidence_id") or ""),
+                "evidence": {
+                    key: evidence_by_id.get(
+                        str(item.get("evidence_id") or ""), {}
+                    ).get(key, "")
+                    for key in (
+                        "source_name",
+                        "source_grade",
+                        "source_url",
+                        "published_at",
+                        "source_quote",
+                        "locator",
+                        "article_id",
+                        "verification_status",
+                    )
+                },
             }
             for item in updates_24h
         ]
@@ -601,9 +884,12 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "<section class='value-change'>"
                 f"<h3>{escape(str(item.get('statement') or '研究对象更新'))}</h3>"
                 f"<p><strong>记录时间：</strong>{escape(str(item.get('published_at') or ''))}</p>"
+                f"<p><strong>证据：</strong><a href='{escape(str(evidence_by_id.get(str(item.get('evidence_id') or ''), {}).get('source_url') or ''))}' "
+                "target='_blank' rel='noreferrer'>"
+                f"{escape(str(evidence_by_id.get(str(item.get('evidence_id') or ''), {}).get('source_name') or '公开来源'))} ↗</a></p>"
                 "</section>"
             )
-            for item in updates_24h[:20]
+            for item in updates_24h
         )
         result.append(
             {
@@ -628,9 +914,25 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 ),
                 "strategicThesis": "",
                 "updates": updates,
-                "facts": updates_24h,
+                "facts": [
+                    {
+                        **item,
+                        "source_url": str(
+                            evidence_by_id.get(
+                                str(item.get("evidence_id") or ""), {}
+                            ).get("source_url")
+                            or ""
+                        ),
+                        "status": "confirmed",
+                    }
+                    for item in updates_24h
+                ],
                 "factCount": int(object_data.get("fact_count") or 0),
-                "html": update_html or "<p>尚无最近24小时正式更新记录。</p>",
+                "html": (
+                    f"<p>已积累 {int(object_data.get('fact_count') or 0)} 条可追溯记录；"
+                    "以下仅展示最近24小时中最值得战略关注的更新。</p>"
+                    + (update_html or "<p>尚无最近24小时正式更新记录。</p>")
+                ),
             }
         )
     return result
@@ -760,11 +1062,11 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
                 "html": update_html or "<p>尚无正式更新记录。</p>",
             }
         )
-    existing_ids = {str(item["id"]) for item in result}
-    result.extend(
-        item for item in canonical_objects if str(item["id"]) not in existing_ids
-    )
-    return result
+    canonical_ids = {str(item["id"]) for item in canonical_objects}
+    return [
+        *[item for item in result if str(item["id"]) not in canonical_ids],
+        *canonical_objects,
+    ]
 
 
 def parse_strategic_signals(*, repo_root: Path) -> list[dict]:

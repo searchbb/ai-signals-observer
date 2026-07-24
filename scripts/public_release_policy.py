@@ -6,6 +6,7 @@ import json
 import re
 from collections import Counter
 from typing import Iterable
+from urllib.parse import urlparse
 
 
 DENIED_RESEARCH_SOURCE_PREFIXES = ("research/department_strategy/",)
@@ -36,6 +37,64 @@ STRICT_VISIBLE_MARKERS = (
 CORPORATE_EMAIL_RE = re.compile(
     r"[A-Za-z0-9._%+-]+@(?:huawei|h-partners)\.com", re.IGNORECASE
 )
+VERIFIED_PUBLIC_EVIDENCE_STATUSES = {
+    "quote_verified",
+    "quote_verified_claim_candidate",
+}
+
+
+def strict_visible_marker_violations(value: object) -> list[str]:
+    lowered = json.dumps(value, ensure_ascii=False).lower()
+    return [
+        f"forbidden_provenance_term_{index}"
+        for index, marker in enumerate(STRICT_VISIBLE_MARKERS, start=1)
+        if marker.lower() in lowered
+    ]
+
+
+def public_http_url(value: object) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def object_marker_violations(item: dict) -> list[str]:
+    """Allow reported internal events only when their public evidence is verified."""
+
+    violations = strict_visible_marker_violations(
+        {
+            key: value
+            for key, value in item.items()
+            if key not in {"updates", "facts", "html"}
+        }
+    )
+    verified_fact_ids: set[str] = set()
+    for update in list(item.get("updates") or []):
+        update_violations = strict_visible_marker_violations(update)
+        if not update_violations:
+            continue
+        evidence = dict(update.get("evidence") or {})
+        if (
+            public_http_url(evidence.get("source_url"))
+            and str(evidence.get("verification_status") or "")
+            in VERIFIED_PUBLIC_EVIDENCE_STATUSES
+        ):
+            fact_id = str(update.get("fact_id") or "")
+            if fact_id:
+                verified_fact_ids.add(fact_id)
+            continue
+        violations.extend(update_violations)
+    for fact in list(item.get("facts") or []):
+        fact_violations = strict_visible_marker_violations(fact)
+        if not fact_violations:
+            continue
+        if (
+            str(fact.get("fact_id") or "") in verified_fact_ids
+            and public_http_url(fact.get("source_url"))
+            and str(fact.get("status") or "") in {"confirmed", "fact_confirmed"}
+        ):
+            continue
+        violations.extend(fact_violations)
+    return sorted(set(violations))
 
 
 def publication_violations(collection: str, item: dict) -> list[str]:
@@ -47,11 +106,10 @@ def publication_violations(collection: str, item: dict) -> list[str]:
     if collection == "articles" and not str(item.get("url") or "").startswith(("http://", "https://")):
         violations.append("article_missing_public_source_url")
     serialized = json.dumps(item, ensure_ascii=False)
-    if collection in {"issues", "cards", "research", "articles", "objects", "signals"}:
-        lowered = serialized.lower()
-        for index, marker in enumerate(STRICT_VISIBLE_MARKERS, start=1):
-            if marker.lower() in lowered:
-                violations.append(f"forbidden_provenance_term_{index}")
+    if collection == "objects":
+        violations.extend(object_marker_violations(item))
+    elif collection in {"issues", "cards", "research", "articles", "signals"}:
+        violations.extend(strict_visible_marker_violations(item))
     if CORPORATE_EMAIL_RE.search(serialized):
         violations.append("corporate_email_address")
     return sorted(set(violations))
