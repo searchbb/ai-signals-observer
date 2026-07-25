@@ -951,6 +951,30 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
             dict(item) for item in hydrated.get("recent_updates") or []
             if isinstance(item, dict)
         ][:10]
+        if not recent_updates:
+            recent_updates = [
+                {
+                    **dict(item),
+                    "event": str(
+                        item.get("event")
+                        or item.get("statement")
+                        or "事实更新"
+                    ),
+                    "event_date": str(
+                        item.get("event_date")
+                        or item.get("published_at")
+                        or ""
+                    ),
+                    "impact_type": str(
+                        item.get("impact_type") or "Strategy"
+                    ),
+                    "direction": str(
+                        item.get("direction") or "NEW_FACTOR"
+                    ),
+                }
+                for item in object_data.get("updates_24h") or []
+                if isinstance(item, dict)
+            ][:10]
         trends = [
             {
                 **dict(item),
@@ -961,6 +985,18 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 ],
             }
             for item in hydrated.get("trends") or []
+            if isinstance(item, dict)
+        ]
+        current_observations = [
+            {
+                **dict(item),
+                "evidence_cards": [
+                    evidence_by_id[evidence_id]
+                    for evidence_id in item.get("evidence_ids") or []
+                    if evidence_id in evidence_by_id
+                ],
+            }
+            for item in hydrated.get("current_observations") or []
             if isinstance(item, dict)
         ]
         thesis = dict(hydrated.get("thesis") or {})
@@ -1139,6 +1175,7 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "metrics": metrics,
                 "metricSummary": dict(hydrated.get("metric_summary") or {}),
                 "trends": trends,
+                "currentObservations": current_observations,
                 "thesis": thesis,
                 "competitiveRelationships": [
                     dict(item)
@@ -1157,9 +1194,18 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                     "fact_count": int(object_data.get("fact_count") or 0),
                     "strategic_metric_count": len(metrics),
                     "approved_trend_count": approved_trends,
+                    "current_observation_count": len(
+                        current_observations
+                    ),
                     "thesis_status": str(thesis.get("review_status") or "missing"),
                 },
-                "html": "",
+                "html": render_markdown(
+                    "\n".join(
+                        f"- {str(item.get('event') or '')}"
+                        for item in updates
+                        if str(item.get("event") or "").strip()
+                    )
+                ),
             }
         )
     return result

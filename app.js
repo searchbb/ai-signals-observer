@@ -607,6 +607,7 @@ function renderResearchObjectDetail(item, canonical) {
   const approvedThesis = thesis.review_status === "approved" && thesis.thesis;
   const metrics = Array.isArray(item.metrics) ? item.metrics : [];
   const trends = Array.isArray(item.trends) ? item.trends : [];
+  const currentObservations = Array.isArray(item.currentObservations) ? item.currentObservations : [];
   const sections = Array.isArray(item.longTermSections) ? item.longTermSections : [];
   const relationships = Array.isArray(item.competitiveRelationships) ? item.competitiveRelationships : [];
   const updates = Array.isArray(item.recentUpdates) ? item.recentUpdates : [];
@@ -618,9 +619,23 @@ function renderResearchObjectDetail(item, canonical) {
           <p>${escapeHtml(humanMetricName(metric))}</p>
           <strong>${escapeHtml(metricValue(metric))}</strong>
           <small>${escapeHtml(metric.effective_period || "时期未标注")}</small>
+          ${metric.comparison?.status === "comparable"
+            ? `<p class="object-metric-change">较 ${escapeHtml(metric.comparison.previous_effective_period || "前值")} ${escapeHtml(metricChangeLabel(metric.comparison))}</p>`
+            : ""}
           ${renderEvidenceCard(metric.evidence, "Evidence Card")}
         </article>`).join("")
     : `<p class="object-empty">暂无满足战略指标准入条件的可靠公开数字。</p>`;
+  const observationHtml = currentObservations.length
+    ? `<div class="object-observation-grid">${currentObservations.map((observation) => `
+        <article class="object-observation">
+          <div><span>${observation.observation_status === "HYPOTHESIS" ? "待验证假设" : "证据支持的观察"}</span><small>v${Number(observation.version_number || 1)} · 有效至 ${escapeHtml(formatDate(observation.valid_until))}</small></div>
+          <h4>${escapeHtml(observation.title || "当前观察")}</h4>
+          <p>${escapeHtml(observation.summary || "")}</p>
+          <blockquote>${escapeHtml(observation.strategic_implication || "")}</blockquote>
+          <footer>${Number(observation.independent_source_count || 0)} 份来源 · 置信度 ${escapeHtml(confidenceLabel(observation.confidence))}</footer>
+          ${renderEvidenceCards(observation.evidence_cards, "观察证据")}
+        </article>`).join("")}</div>`
+    : `<p class="object-empty prominent">当前没有满足双事实、双来源证据门的阶段性观察。近期事实仍保留在下方，不会被硬写成趋势。</p>`;
   const trendHtml = trends.map((trend) => {
     const approved = trend.review_status === "approved";
     return `
@@ -691,12 +706,17 @@ function renderResearchObjectDetail(item, canonical) {
       <div class="object-coverage">
         <span>可追溯事实 <b>${Number(coverage.fact_count || 0)}</b></span>
         <span>战略指标 <b>${Number(coverage.strategic_metric_count || 0)}</b></span>
+        <span>当前观察 <b>${Number(coverage.current_observation_count || 0)}</b></span>
         <span>已审核趋势 <b>${Number(coverage.approved_trend_count || 0)}/3</b></span>
       </div>
     </section>
+    <section class="detail object-section object-current-observations">
+      <div class="object-section-heading"><div><p class="eyebrow">CURRENT OBSERVATIONS</p><h3>当前观察与阶段性启示</h3></div><small>有证据支持，但不等同于长期趋势或预测</small></div>
+      ${observationHtml}
+    </section>
     <section class="detail object-thesis">
-      <p class="eyebrow">CURRENT VIEW</p>
-      <h3>当前判断</h3>
+      <p class="eyebrow">STRATEGIC THESIS</p>
+      <h3>经审核的长期判断</h3>
       ${approvedThesis
         ? `<p class="object-thesis-copy">${escapeHtml(thesis.thesis)}</p>${renderEvidenceCards(thesis.evidence_cards, "判断证据")}`
         : `<p class="object-empty prominent">证据正在积累，尚未形成经审核的长期判断。这里不会用单篇新闻自动编造结论。</p>`}
@@ -715,6 +735,19 @@ function renderResearchObjectDetail(item, canonical) {
     await navigator.clipboard.writeText(button.dataset.copy);
     button.textContent = "已复制";
   });
+}
+
+function metricChangeLabel(comparison) {
+  const percent = Number(comparison?.change_percent);
+  if (Number.isFinite(percent)) return `${percent > 0 ? "+" : ""}${percent.toFixed(Math.abs(percent) >= 10 ? 0 : 1)}%`;
+  const absolute = Number(comparison?.change_absolute);
+  if (!Number.isFinite(absolute)) return "无可比变化";
+  return `${absolute > 0 ? "+" : ""}${absolute.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}`;
+}
+
+function confidenceLabel(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${Math.round(numeric * 100)}%` : "未标注";
 }
 
 function renderDetail(type, item) {

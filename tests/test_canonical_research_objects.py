@@ -24,6 +24,13 @@ def test_canonical_object_is_available_without_legacy_database(tmp_path: Path) -
     projection.write_text(
         json.dumps(
             {
+                "catalog": {
+                    "status": "ready",
+                    "schema_version": 4,
+                    "read_only": True,
+                    "objects": [],
+                    "groupings": {},
+                },
                 "profiles": {
                     "obj_archetype_agent_platform": {
                         "object": {

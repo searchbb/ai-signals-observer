@@ -368,6 +368,16 @@ button, input { font: inherit; }
 .object-metric > p { min-height: 2.7em; margin: 0 0 10px; color: var(--muted); font-size: .8rem; line-height: 1.45; }
 .object-metric > strong { display: block; overflow-wrap: anywhere; color: var(--navy); font-family: Georgia, "Songti SC", serif; font-size: clamp(1.28rem, 2.1vw, 1.85rem); }
 .object-metric > small { display: block; margin-top: 7px; color: var(--muted); }
+.object-metric-change { margin: 8px 0 0; color: #24644f; font-size: .76rem; font-weight: 800; }
+.object-current-observations { border-top-color: #2e735e; background: linear-gradient(145deg, #fff, #f1f7f3); }
+.object-observation-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.object-observation { padding: 18px; border: 1px solid #cbded5; border-left: 5px solid #2e735e; background: #fff; }
+.object-observation > div { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .76rem; }
+.object-observation > div span { color: #24644f; font-weight: 800; }
+.object-observation h4 { margin: 18px 0 8px; font-size: 1.08rem; }
+.object-observation p { margin: 0; color: #405249; line-height: 1.66; }
+.object-observation blockquote { margin: 14px 0; padding: 11px 13px; border-left: 3px solid #b48a4b; background: #faf7ef; color: #514a3e; line-height: 1.55; }
+.object-observation footer { color: var(--muted); font-size: .72rem; }
 .evidence-card { margin-top: 13px; border-top: 1px solid var(--line); }
 .evidence-card > summary { padding: 9px 0 2px; color: var(--red); cursor: pointer; font-size: .78rem; font-weight: 800; }
 .evidence-card > div { margin-top: 8px; padding: 12px; background: #f8fafc; font-size: .78rem; line-height: 1.55; }
@@ -500,7 +510,7 @@ button, input { font: inherit; }
   .object-header-actions, .object-section-heading { width: 100%; align-items: start; flex-direction: column; }
   .object-header-actions > a, .object-header-actions > button { width: 100%; text-align: center; }
   .object-section-heading small { text-align: left; }
-  .object-metric-grid, .object-trend-grid, .object-risk-grid, .object-relationship-grid { grid-template-columns: 1fr; }
+  .object-metric-grid, .object-observation-grid, .object-trend-grid, .object-risk-grid, .object-relationship-grid { grid-template-columns: 1fr; }
   .object-update { grid-template-columns: 1fr; gap: 6px; }
   .object-recent > summary, .object-update-list { padding-right: 14px; padding-left: 14px; }
   html.direct-detail .sidebar { padding-bottom: 0; }
