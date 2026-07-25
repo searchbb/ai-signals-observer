@@ -472,7 +472,12 @@ def sync_detail_shards(*, payload_path: Path, detail_root: Path) -> dict[str, ob
             shutil.rmtree(staging_root)
 
 
-def run_build(*, repo_root: Path, out_path: Path) -> None:
+def run_build(
+    *,
+    repo_root: Path,
+    out_path: Path,
+    required_news_ids: list[str] | None = None,
+) -> None:
     command = [
         sys.executable,
         str(BUILD_SCRIPT),
@@ -481,6 +486,8 @@ def run_build(*, repo_root: Path, out_path: Path) -> None:
         "--out",
         str(out_path),
     ]
+    for article_id in required_news_ids or []:
+        command.extend(["--required-news-id", str(article_id)])
     subprocess.run(command, check=True)
 
 
@@ -620,6 +627,7 @@ def main() -> int:
         default=[],
         choices=sorted(DETAIL_COLLECTION_TYPES),
     )
+    parser.add_argument("--required-news-id", action="append", default=[])
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root or str(find_repo_root())).expanduser().resolve()
@@ -635,7 +643,11 @@ def main() -> int:
         temp_path = Path(handle.name)
 
     try:
-        run_build(repo_root=repo_root, out_path=temp_path)
+        run_build(
+            repo_root=repo_root,
+            out_path=temp_path,
+            required_news_ids=list(args.required_news_id),
+        )
         preserved_collections = preserve_existing_collections(
             before_path=out_path,
             after_path=temp_path,

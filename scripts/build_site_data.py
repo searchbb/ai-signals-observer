@@ -537,7 +537,13 @@ def parse_article_directory(path: Path) -> dict:
     }
 
 
-def parse_news_rows(*, repo_root: Path, article_ids: set[str], limit: int) -> tuple[list[dict], int]:
+def parse_news_rows(
+    *,
+    repo_root: Path,
+    article_ids: set[str],
+    limit: int,
+    required_news_ids: set[str] | None = None,
+) -> tuple[list[dict], int]:
     db_path = repo_root / "data" / "news_library" / "news_library.sqlite3"
     query = """
         SELECT
@@ -563,7 +569,36 @@ def parse_news_rows(*, repo_root: Path, article_ids: set[str], limit: int) -> tu
     with sqlite3.connect(db_path) as connection:
         connection.row_factory = sqlite3.Row
         total_count = int(connection.execute("SELECT COUNT(*) FROM news_articles").fetchone()[0])
-        rows = connection.execute(query, (max(1, limit),)).fetchall()
+        rows = list(connection.execute(query, (max(1, limit),)).fetchall())
+        required = sorted(set(required_news_ids or ()) - {str(row["article_id"]) for row in rows})
+        if required:
+            placeholders = ",".join("?" for _ in required)
+            required_rows = connection.execute(
+                f"""
+                SELECT
+                    article_id,source_id,title_zh,title_original,title_en,
+                    canonical_url,published_at,first_seen_at,digest_status,
+                    digested_at,last_seen_at,summary_zh,summary_original,
+                    digest_result_summary
+                  FROM news_articles
+                 WHERE article_id IN ({placeholders})
+                """,
+                required,
+            ).fetchall()
+            found = {str(row["article_id"]) for row in required_rows}
+            missing = sorted(set(required) - found)
+            if missing:
+                raise RuntimeError(
+                    "required_news_ids_missing_from_source:" + ",".join(missing)
+                )
+            rows.extend(required_rows)
+            rows.sort(
+                key=lambda row: (
+                    str(row["published_at"] or row["first_seen_at"] or ""),
+                    str(row["article_id"]),
+                ),
+                reverse=True,
+            )
     news_rows: list[dict] = []
     for row in rows:
         article_id = str(row["article_id"])
@@ -1655,6 +1690,7 @@ def main() -> None:
     parser.add_argument("--repo-root", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--news-window", type=int, default=500)
+    parser.add_argument("--required-news-id", action="append", default=[])
     args = parser.parse_args()
 
     repo_root = Path(args.repo_root).resolve()
@@ -1715,6 +1751,7 @@ def main() -> None:
         repo_root=repo_root,
         article_ids={item["id"] for item in articles},
         limit=max(1, args.news_window),
+        required_news_ids={str(value) for value in args.required_news_id if str(value)},
     )
     research_objects = parse_research_objects(repo_root=repo_root)
     strategic_signals = parse_strategic_signals(repo_root=repo_root)

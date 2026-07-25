@@ -42,7 +42,11 @@ def git(*args: str, cwd: Path = SITE_ROOT, check: bool = True) -> subprocess.Com
 
 
 def sync_site_data(
-    *, repo_root: Path, python_bin: str, preserve_existing_collections: list[str]
+    *,
+    repo_root: Path,
+    python_bin: str,
+    preserve_existing_collections: list[str],
+    required_news_ids: list[str] | None = None,
 ) -> dict[str, object]:
     command = [
         python_bin,
@@ -52,6 +56,8 @@ def sync_site_data(
     ]
     for collection in preserve_existing_collections:
         command.extend(["--preserve-existing-collection", collection])
+    for article_id in required_news_ids or []:
+        command.extend(["--required-news-id", str(article_id)])
     run = subprocess.run(command, check=True, text=True, capture_output=True)
     return json.loads(run.stdout)
 
@@ -345,6 +351,7 @@ def main() -> int:
         default=[],
         choices=("topics", "issues", "cards", "research", "articles", "news", "objects", "signals"),
     )
+    parser.add_argument("--required-news-id", action="append", default=[])
     args = parser.parse_args()
 
     lock_path = SITE_ROOT / ".git" / "portal-publish.lock"
@@ -364,6 +371,7 @@ def main() -> int:
         repo_root=repo_root,
         python_bin=args.python_bin,
         preserve_existing_collections=list(args.preserve_existing_collection),
+        required_news_ids=list(args.required_news_id),
     )
     site_data_path = SITE_ROOT / "data" / "site-data.json"
     site_data_sha = sha256_file(site_data_path)
