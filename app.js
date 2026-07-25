@@ -602,8 +602,20 @@ function trendDirectionLabel(direction) {
   return ({ UP: "增强", DOWN: "减弱", FLAT: "基本不变", MIXED: "分化", INSUFFICIENT: "证据不足" })[direction] || "证据不足";
 }
 
+function researchClaimLabel(type) {
+  return ({
+    FACT: "已验证事实",
+    REPORTED_ESTIMATE: "媒体估算",
+    ASSUMPTION: "情景假设",
+    DERIVED_METRIC: "确定性推导",
+    HYPOTHESIS: "待验证假设",
+    OPINION: "外部观点",
+  })[type] || type || "研究声明";
+}
+
 function renderResearchObjectDetail(item, canonical) {
   const thesis = item.thesis && typeof item.thesis === "object" ? item.thesis : {};
+  const researchBrief = item.researchBrief && typeof item.researchBrief === "object" ? item.researchBrief : {};
   const approvedThesis = thesis.review_status === "approved" && thesis.thesis;
   const metrics = Array.isArray(item.metrics) ? item.metrics : [];
   const trends = Array.isArray(item.trends) ? item.trends : [];
@@ -613,6 +625,25 @@ function renderResearchObjectDetail(item, canonical) {
   const updates = Array.isArray(item.recentUpdates) ? item.recentUpdates : [];
   const coverage = item.evidenceCoverage || {};
   const objectLabel = item.objectType === "archetype" ? "产业范式" : "核心公司";
+  const briefClaims = Array.isArray(researchBrief.known_claims) ? researchBrief.known_claims : [];
+  const briefModels = Array.isArray(researchBrief.model_runs) ? researchBrief.model_runs : [];
+  const candidatePacks = Array.isArray(researchBrief.candidate_packs) ? researchBrief.candidate_packs : [];
+  const briefHtml = researchBrief.current_judgment
+    ? `<section class="detail object-section object-research-brief">
+        <div class="object-section-heading"><div><p class="eyebrow">RESEARCH AGENDA</p><h3>当前研究议程</h3></div><small>问题驱动 · 事实、估算、假设与推导分层</small></div>
+        <article class="research-brief-question"><span>正在回答的问题</span><h4>${escapeHtml(researchBrief.agenda?.question || "")}</h4><p>${escapeHtml(researchBrief.agenda?.rationale || "")}</p></article>
+        <div class="research-brief-judgment"><article><span>当前判断</span><p>${escapeHtml(researchBrief.current_judgment || "")}</p></article><article><span>本轮变化</span><p>${escapeHtml(researchBrief.what_changed || "")}</p></article></div>
+        ${briefClaims.length ? `<div class="research-brief-claims">${briefClaims.slice(0, 7).map((claim) => `<article><span>${escapeHtml(researchClaimLabel(claim.claim_type))}</span><strong>${escapeHtml(claim.statement || "")}</strong><small>${escapeHtml(claim.provenance_note || "")}</small></article>`).join("")}</div>` : ""}
+        ${briefModels.map((model) => {
+          const outputs = model.outputs || {};
+          const margin = Number(outputs.scenario_contribution_margin);
+          const breakeven = Number(outputs.breakeven_price_x_utilization);
+          return `<article class="research-brief-model"><header><span>情景推导 · ${escapeHtml(model.model_id || "")}</span><b>不是公司已披露财务事实</b></header><div><strong>名义成本/GW·年 ${Number(outputs.nominal_cost_usd_billion_per_gw_year || 0).toFixed(2)} 亿美元</strong><strong>满载收入/GW·年 ${Number(outputs.full_load_revenue_usd_billion_per_gw_year || 0).toFixed(2)} 亿美元</strong><strong>容量贡献毛利率 ${Number.isFinite(margin) ? `${(margin * 100).toFixed(1)}%` : "—"}</strong><strong>盈亏平衡 价格×利用率 ${Number.isFinite(breakeven) ? `${(breakeven * 100).toFixed(1)}%` : "—"}</strong></div>${(model.warnings || []).map((warning) => `<p>${escapeHtml(warning)}</p>`).join("")}</article>`;
+        }).join("")}
+        ${candidatePacks.length ? `<section class="research-candidate-packs"><header><div><span>主动补证</span><h4>新线索，等待正式核验</h4></div><b>未写入事实账本</b></header>${candidatePacks.map((pack) => `<article><div><span>${pack.research_mode === "DEEP_RESEARCH" ? "深搜" : "轻量补证"}</span><time>${escapeHtml(formatDate(pack.generated_at || ""))}</time></div><h5>${escapeHtml(pack.research_question || "")}</h5><p>${escapeHtml(pack.candidate_answer || "")}</p><footer>${(pack.sources || []).map((source) => `<a href="${escapeHtml(source.url || "")}" target="_blank" rel="noreferrer">${escapeHtml(source.source_grade || "")}级 · ${escapeHtml(source.publisher || source.title || "")} ↗</a>`).join("")}</footer></article>`).join("")}</section>` : ""}
+        <div class="research-brief-next"><article><span>仍然不知道</span><ul>${(researchBrief.open_gaps || []).map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></article><article><span>下一步研究</span><ol>${(researchBrief.next_actions || []).map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ol></article><article><span>反证与边界</span><ul>${(researchBrief.counterevidence || []).map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul></article></div>
+      </section>`
+    : "";
   const metricHtml = metrics.length
     ? metrics.map((metric) => `
         <article class="object-metric">
@@ -710,6 +741,7 @@ function renderResearchObjectDetail(item, canonical) {
         <span>已审核趋势 <b>${Number(coverage.approved_trend_count || 0)}/3</b></span>
       </div>
     </section>
+    ${briefHtml}
     <section class="detail object-section object-current-observations">
       <div class="object-section-heading"><div><p class="eyebrow">CURRENT OBSERVATIONS</p><h3>当前观察与阶段性启示</h3></div><small>有证据支持，但不等同于长期趋势或预测</small></div>
       ${observationHtml}

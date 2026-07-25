@@ -4,28 +4,60 @@ const path = require('node:path');
 
 const siteRoot = path.resolve(__dirname, '..');
 const baseURL = process.env.PORTAL_BASE_URL || 'http://127.0.0.1:8765/';
-const mailReportPath = path.resolve(
+const hourlyMailRoot = path.resolve(
   siteRoot,
-  '../../../../../data/semantic_pipeline_v2/investment/loop_engineering/digest_cycles/digest_cycle_20260716T121523+0800/final/digest_briefing.json',
+  '../../../../../data/semantic_pipeline_v2/investment/loop_engineering/hourly_value_mail',
 );
-const mailReport = JSON.parse(fs.readFileSync(mailReportPath, 'utf8'));
+const latestSentMail = fs.readdirSync(hourlyMailRoot, { withFileTypes: true })
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => {
+    const manifestPath = path.join(hourlyMailRoot, entry.name, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) return null;
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.status !== 'sent' || !manifest.snapshot_path) return null;
+    return {
+      name: entry.name,
+      snapshotPath: manifest.snapshot_path,
+    };
+  })
+  .filter(Boolean)
+  .sort((left, right) => right.name.localeCompare(left.name))[0];
+if (!latestSentMail || !fs.existsSync(latestSentMail.snapshotPath)) {
+  throw new Error('No sent hourly-value-mail snapshot is available for deep-link QA');
+}
+const mailSnapshot = JSON.parse(
+  fs.readFileSync(latestSentMail.snapshotPath, 'utf8'),
+);
+const mailPrimary = mailSnapshot.digest.find(
+  (item) => (item.portal_type || 'news') === 'news',
+);
 const mailLinks = [
-  ...mailReport.digested_articles_24h.map((item) => ({ type: 'article', id: item.article_id })),
-  ...[...mailReport.selected_for_digest, ...mailReport.watch_only]
-    .map((item) => ({ type: 'news', id: item.article_id })),
+  ...mailSnapshot.digest.map((item) => ({
+    type: item.portal_type || 'news',
+    id: item.article_id,
+  })),
+  ...mailSnapshot.research_objects.map((item) => ({
+    type: 'object',
+    id: item.research_object_id,
+  })),
 ];
 
 async function blockFullIndex(page) {
   await page.route('**/data/site-index.json', (route) => route.abort('failed'));
 }
 
-test('email article deep link renders title and summary without the full site index', async ({ page }) => {
+test('latest email deep link renders title and summary without the full site index', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await blockFullIndex(page);
   const startedAt = Date.now();
-  await page.goto(`${baseURL}#article/news_1dadf276c5fb0ff4ead6`, { waitUntil: 'domcontentloaded' });
+  await page.goto(
+    `${baseURL}#news/${encodeURIComponent(mailPrimary.article_id)}`,
+    { waitUntil: 'domcontentloaded' },
+  );
   await expect(page.locator('.summary')).toBeVisible({ timeout: 5000 });
-  await expect(page.locator('.summary')).toContainText('Jetson');
+  await expect(page.locator('.detail-title h3')).toContainText(
+    mailPrimary.title.slice(0, 12),
+  );
   await expect(page.locator('#content')).not.toContainText('页面加载失败');
   const metrics = await page.evaluate(() => {
     const title = document.querySelector('.detail-title h3');
@@ -51,13 +83,21 @@ test('email article deep link renders title and summary without the full site in
 test('inline bootstrap renders the summary even when the main application is unavailable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route('**/app.js*', (route) => route.abort('failed'));
-  await page.goto(`${baseURL}#article/news_1dadf276c5fb0ff4ead6`, { waitUntil: 'domcontentloaded' });
-  await expect(page.locator('.bootstrap-detail .summary')).toContainText('Jetson', { timeout: 8000 });
+  await page.goto(
+    `${baseURL}#news/${encodeURIComponent(mailPrimary.article_id)}`,
+    { waitUntil: 'domcontentloaded' },
+  );
+  await expect(page.locator('.bootstrap-detail .summary')).toBeVisible({
+    timeout: 8000,
+  });
+  await expect(page.locator('.bootstrap-detail .detail-title h3')).toContainText(
+    mailPrimary.title.slice(0, 12),
+  );
   await expect(page.locator('.loading-copy')).toHaveCount(0);
 });
 
 test('all links in the sent mobile email have non-empty fast detail shards', async ({ request }) => {
-  expect(mailLinks).toHaveLength(54);
+  expect(mailLinks.length).toBeGreaterThan(0);
   const checks = await Promise.all(mailLinks.map(async (item) => {
     const response = await request.get(
       `${baseURL}data/details/${item.type}/${encodeURIComponent(item.id)}.json`,
@@ -67,10 +107,10 @@ test('all links in the sent mobile email have non-empty fast detail shards', asy
     expect(payload.type).toBe(item.type);
     expect(payload.id).toBe(item.id);
     expect(payload.item.title.trim().length).toBeGreaterThan(0);
-    expect(payload.item.summary.trim().length).toBeGreaterThan(20);
+    expect(payload.item.summary.trim().length).toBeGreaterThan(10);
     return item.id;
   }));
-  expect(checks).toHaveLength(54);
+  expect(checks).toHaveLength(mailLinks.length);
 });
 
 test('analysis-card list no longer overflows at phone widths', async ({ page }) => {

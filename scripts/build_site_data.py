@@ -566,11 +566,17 @@ def parse_news_rows(
         ORDER BY published_at DESC, article_id
         LIMIT ?
     """
+    bounded_limit = max(1, limit)
+    required_ids = set(required_news_ids or ())
+    if len(required_ids) > bounded_limit:
+        raise RuntimeError(
+            f"required_news_ids_exceed_window:{len(required_ids)}>{bounded_limit}"
+        )
     with sqlite3.connect(db_path) as connection:
         connection.row_factory = sqlite3.Row
         total_count = int(connection.execute("SELECT COUNT(*) FROM news_articles").fetchone()[0])
-        rows = list(connection.execute(query, (max(1, limit),)).fetchall())
-        required = sorted(set(required_news_ids or ()) - {str(row["article_id"]) for row in rows})
+        rows = list(connection.execute(query, (bounded_limit,)).fetchall())
+        required = sorted(required_ids - {str(row["article_id"]) for row in rows})
         if required:
             placeholders = ",".join("?" for _ in required)
             required_rows = connection.execute(
@@ -592,6 +598,23 @@ def parse_news_rows(
                     "required_news_ids_missing_from_source:" + ",".join(missing)
                 )
             rows.extend(required_rows)
+            rows.sort(
+                key=lambda row: (
+                    str(row["published_at"] or row["first_seen_at"] or ""),
+                    str(row["article_id"]),
+                ),
+                reverse=True,
+            )
+        if len(rows) > bounded_limit:
+            required_rows = [
+                row for row in rows if str(row["article_id"]) in required_ids
+            ]
+            optional_rows = [
+                row for row in rows if str(row["article_id"]) not in required_ids
+            ]
+            rows = required_rows + optional_rows[
+                : bounded_limit - len(required_rows)
+            ]
             rows.sort(
                 key=lambda row: (
                     str(row["published_at"] or row["first_seen_at"] or ""),
@@ -943,6 +966,9 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
     for object_id, profile in sorted(dict(payload.get("profiles") or {}).items()):
         hydrated = profile_service.get_profile(object_id)
         object_data = dict(hydrated.get("object") or {})
+        active_research_brief = dict(
+            hydrated.get("research_brief") or {}
+        )
         metrics = [
             dict(item) for item in hydrated.get("metrics") or []
             if isinstance(item, dict)
@@ -1157,6 +1183,11 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "category": str(object_data.get("kind") or "研究对象"),
                 "summary": str(object_data.get("description") or ""),
                 "updatedAt": first_nonempty(
+                    str(
+                        active_research_brief.get("as_of")
+                        or active_research_brief.get("created_at")
+                        or ""
+                    ),
                     str(object_data.get("latest_update_at") or ""),
                     str(object_data.get("updated_at") or ""),
                 ),
@@ -1176,6 +1207,7 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "metricSummary": dict(hydrated.get("metric_summary") or {}),
                 "trends": trends,
                 "currentObservations": current_observations,
+                "researchBrief": active_research_brief,
                 "thesis": thesis,
                 "competitiveRelationships": [
                     dict(item)

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import quote
 
@@ -491,6 +491,53 @@ def run_build(
     subprocess.run(command, check=True)
 
 
+def discover_recent_sent_mail_news_ids(
+    *,
+    repo_root: Path,
+    current_time: datetime | None = None,
+    lookback_hours: int = 24,
+) -> list[str]:
+    root = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "investment"
+        / "loop_engineering"
+        / "hourly_value_mail"
+    )
+    if not root.exists():
+        return []
+    now = (current_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    cutoff = now - timedelta(hours=max(1, lookback_hours))
+    selected: set[str] = set()
+    for manifest_path in sorted(root.glob("*/manifest.json"), reverse=True):
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if manifest.get("status") != "sent":
+                continue
+            snapshot_path = Path(str(manifest.get("snapshot_path") or ""))
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            timestamp = str(
+                snapshot.get("generated_at")
+                or snapshot.get("window_end")
+                or ""
+            )
+            observed_at = datetime.fromisoformat(
+                timestamp.replace("Z", "+00:00")
+            ).astimezone(timezone.utc)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if observed_at < cutoff:
+            continue
+        for item in list(snapshot.get("digest") or []):
+            if str(item.get("portal_type") or "news") != "news":
+                continue
+            article_id = str(item.get("article_id") or "").strip()
+            if article_id:
+                selected.add(article_id)
+    return sorted(selected)
+
+
 def summarize_payload(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     collections = payload.get("collections", {})
@@ -643,10 +690,14 @@ def main() -> int:
         temp_path = Path(handle.name)
 
     try:
+        required_news_ids = sorted(
+            set(args.required_news_id)
+            | set(discover_recent_sent_mail_news_ids(repo_root=repo_root))
+        )
         run_build(
             repo_root=repo_root,
             out_path=temp_path,
-            required_news_ids=list(args.required_news_id),
+            required_news_ids=required_news_ids,
         )
         preserved_collections = preserve_existing_collections(
             before_path=out_path,

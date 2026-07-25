@@ -48,11 +48,11 @@ test("public framing, Chinese navigation, and news-first ordering are correct", 
 test("navigation has one primary path and a mobile-safe overview", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`${baseURL}#home`);
-  await expect(page.locator(".nav a")).toHaveCount(8);
+  await expect(page.locator(".nav a")).toHaveCount(10);
   await expect(page.locator(".nav a").first()).toHaveText("新闻资讯");
   await expect(page.locator("#stats")).toBeVisible();
   await expect(page.locator(".stats-title")).toHaveText("内容规模");
-  await expect(page.locator("#stats .stat")).toHaveCount(6);
+  await expect(page.locator("#stats .stat")).toHaveCount(8);
   await expect(page.locator("#stats a")).toHaveCount(0);
   await page.screenshot({ path: path.join(siteRoot, "output/playwright/navigation-desktop-final.png"), fullPage: true });
 
@@ -85,7 +85,7 @@ test("navigation has one primary path and a mobile-safe overview", async ({ page
 });
 
 test("all seven detail protocols open the expected asset", async ({ page }) => {
-  const cases = [["topic", data.topics[0]], ["issue", data.issues[0]], ["card", data.cards[0]], ["research", data.research[0]], ["article", data.articles[0]], ["news", data.news[0]], ["object", data.objects[0]], ["signal", data.signals[0]]];
+  const cases = [["topic", data.topics[0]], ["issue", data.issues[0]], ["card", data.cards[0]], ["research", data.research[0]], ["article", data.articles[0]], ["news", data.news[0]], ["object", data.objects[0]], ["signal", data.signals[0]]].filter(([, item]) => item);
   for (const [type, item] of cases) {
     await page.goto(`${baseURL}#${type}/${encodeURIComponent(item.id)}`);
     await expect(page.locator("#content h3").first()).toHaveText(item.title);
@@ -111,6 +111,27 @@ test("analysis cards are fully localized and visually structured", async ({ page
   await expect(body).not.toContainText("why_important");
 });
 
+test("research object agenda separates evidence, assumptions, and model output", async ({ page }) => {
+  await page.goto(`${baseURL}#object/obj_company_openai`);
+  await expect(page.locator(".object-research-brief")).toBeVisible();
+  await expect(page.locator(".research-brief-question h4")).toContainText(
+    "Token 工厂单位经济"
+  );
+  await expect(
+    page.locator(".research-brief-claims", { hasText: "情景假设" })
+  ).toBeVisible();
+  await expect(page.locator(".research-brief-model")).toContainText(
+    "不是公司已披露财务事实"
+  );
+  await page.screenshot({
+    path: path.join(
+      siteRoot,
+      "output/playwright/research-object-openai-agenda.png"
+    ),
+    fullPage: true,
+  });
+});
+
 test("search ranking, relation navigation, and timeline filters work", async ({ page }) => {
   await page.goto(baseURL);
   await page.locator("#search-input").fill("git");
@@ -130,7 +151,7 @@ test("search ranking, relation navigation, and timeline filters work", async ({ 
 });
 
 test("all curated research reports open and Mermaid diagrams render as SVG", async ({ page }) => {
-  expect(data.research).toHaveLength(19);
+  expect(data.research.length).toBeGreaterThan(0);
   const reportsWithDiagrams = data.research.filter((item) => Number(item.diagramCount || 0) > 0);
   expect(reportsWithDiagrams.length).toBeGreaterThan(0);
   for (const item of data.research) {

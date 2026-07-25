@@ -59,7 +59,9 @@ def main() -> int:
     maximum_shard_bytes = 0
     for collection_name, detail_type in COLLECTION_TYPES.items():
         rows = list(dict(site_data.get("collections") or {}).get(collection_name) or [])
-        assert int(dict(manifest.get("counts") or {}).get(detail_type) or -1) == len(rows)
+        assert int(
+            dict(manifest.get("counts") or {}).get(detail_type, -1)
+        ) == len(rows)
         for item in rows:
             expected_count += 1
             item_id = str(item["id"])
@@ -82,16 +84,32 @@ def main() -> int:
     mail_result = {"checked": False}
     if args.mail_report:
         report = json.loads(Path(args.mail_report).resolve().read_text(encoding="utf-8"))
-        article_ids = [
-            str(item["article_id"]) for item in list(report.get("digested_articles_24h") or [])
-        ]
-        news_ids = [
-            str(item["article_id"])
-            for item in list(report.get("selected_for_digest") or [])
-            + list(report.get("watch_only") or [])
-        ]
+        detail_ids: dict[str, list[str]]
+        if isinstance(report.get("digest"), list):
+            detail_ids = {}
+            for item in list(report.get("digest") or []):
+                detail_type = str(item.get("portal_type") or "news")
+                detail_ids.setdefault(detail_type, []).append(
+                    str(item["article_id"])
+                )
+            detail_ids["object"] = [
+                str(item["research_object_id"])
+                for item in list(report.get("research_objects") or [])
+            ]
+        else:
+            detail_ids = {
+                "article": [
+                    str(item["article_id"])
+                    for item in list(report.get("digested_articles_24h") or [])
+                ],
+                "news": [
+                    str(item["article_id"])
+                    for item in list(report.get("selected_for_digest") or [])
+                    + list(report.get("watch_only") or [])
+                ],
+            }
         checked = []
-        for detail_type, ids in (("article", article_ids), ("news", news_ids)):
+        for detail_type, ids in detail_ids.items():
             for item_id in ids:
                 path = shard_path(detail_root, detail_type, item_id)
                 payload = json.loads(path.read_text(encoding="utf-8"))
@@ -110,10 +128,15 @@ def main() -> int:
                 )
         mail_result = {
             "checked": True,
-            "article_count": len(article_ids),
-            "news_count": len(news_ids),
+            "counts": {
+                detail_type: len(ids)
+                for detail_type, ids in sorted(detail_ids.items())
+            },
             "all_nonempty": True,
-            "maximum_mail_shard_bytes": max(row["bytes"] for row in checked),
+            "maximum_mail_shard_bytes": max(
+                (row["bytes"] for row in checked),
+                default=0,
+            ),
         }
 
     result = {
