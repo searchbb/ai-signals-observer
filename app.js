@@ -628,7 +628,7 @@ function renderResearchObjectDetail(item, canonical) {
   const observationHtml = currentObservations.length
     ? `<div class="object-observation-grid">${currentObservations.map((observation) => `
         <article class="object-observation">
-          <div><span>${observation.observation_status === "HYPOTHESIS" ? "待验证假设" : "证据支持的观察"}</span><small>v${Number(observation.version_number || 1)} · 有效至 ${escapeHtml(formatDate(observation.valid_until))}</small></div>
+          <div><span>${observation.observation_status === "HYPOTHESIS" ? "待验证假设" : "证据支持的观察"} · ${escapeHtml(observationRelationLabel(observation.evidence_relation_type))}</span><small>v${Number(observation.version_number || 1)} · 有效至 ${escapeHtml(formatDate(observation.valid_until))}</small></div>
           <h4>${escapeHtml(observation.title || "当前观察")}</h4>
           <p>${escapeHtml(observation.summary || "")}</p>
           <blockquote>${escapeHtml(observation.strategic_implication || "")}</blockquote>
@@ -748,6 +748,15 @@ function metricChangeLabel(comparison) {
 function confidenceLabel(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? `${Math.round(numeric * 100)}%` : "未标注";
+}
+
+function observationRelationLabel(type) {
+  return {
+    SAME_ENTITY_CORRELATED: "同对象相关",
+    CROSS_ENTITY_PATTERN: "跨对象模式",
+    CAUSAL_SUPPORTED: "因果有证据",
+    PARALLEL_SIGNAL: "并行信号",
+  }[type] || "关系待标注";
 }
 
 function renderDetail(type, item) {
