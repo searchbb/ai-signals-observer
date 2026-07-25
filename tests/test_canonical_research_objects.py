@@ -11,7 +11,10 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from build_site_data import parse_news_rows, parse_research_objects  # noqa: E402
-from sync_portal_data import discover_recent_sent_mail_news_ids  # noqa: E402
+from sync_portal_data import (  # noqa: E402
+    discover_recent_sent_mail_news_ids,
+    preserve_existing_collections,
+)
 
 
 def test_canonical_object_is_available_without_legacy_database(tmp_path: Path) -> None:
@@ -246,3 +249,75 @@ def test_recent_sent_mail_news_are_automatically_preserved(tmp_path: Path) -> No
     )
 
     assert ids == ["news-recent"]
+
+
+def test_preserved_news_fill_but_never_expand_bounded_window(
+    tmp_path: Path,
+) -> None:
+    before_path = tmp_path / "before.json"
+    after_path = tmp_path / "after.json"
+    before_path.write_text(
+        json.dumps(
+            {
+                "collections": {
+                    "news": [
+                        {
+                            "id": "news-old-extra",
+                            "updatedAt": "2026-07-26T04:00:00Z",
+                        },
+                        {
+                            "id": "news-current",
+                            "updatedAt": "2026-07-26T03:00:00Z",
+                        },
+                    ]
+                },
+                "newsMeta": {
+                    "totalCount": 100,
+                    "mirroredCount": 2,
+                    "windowLimit": 2,
+                },
+                "stats": {"news": 100},
+            }
+        ),
+        encoding="utf-8",
+    )
+    after_path.write_text(
+        json.dumps(
+            {
+                "collections": {
+                    "news": [
+                        {
+                            "id": "news-current",
+                            "updatedAt": "2026-07-26T03:00:00Z",
+                        },
+                        {
+                            "id": "news-required-mail",
+                            "updatedAt": "2026-07-20T01:00:00Z",
+                        },
+                    ]
+                },
+                "newsMeta": {
+                    "totalCount": 101,
+                    "mirroredCount": 2,
+                    "windowLimit": 2,
+                },
+                "stats": {"news": 101},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    preserved = preserve_existing_collections(
+        before_path=before_path,
+        after_path=after_path,
+        collection_names=["news"],
+    )
+    result = json.loads(after_path.read_text(encoding="utf-8"))
+
+    assert preserved == {"news": 0}
+    assert [item["id"] for item in result["collections"]["news"]] == [
+        "news-current",
+        "news-required-mail",
+    ]
+    assert result["newsMeta"]["mirroredCount"] == 2
+    assert result["newsMeta"]["windowLimit"] == 2

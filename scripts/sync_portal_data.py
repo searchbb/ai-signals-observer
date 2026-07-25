@@ -595,6 +595,56 @@ def preserve_existing_collections(
     for name in collection_names:
         old_rows = list(before_collections.get(name) or [])
         new_rows = list(after_collections.get(name) or [])
+        sort_key = lambda item: str(
+            item.get("updatedAt")
+            or item.get("publishedAt")
+            or item.get("mtime")
+            or item.get("lastUpdated")
+            or ""
+        )
+        if name == "news":
+            # The news mirror is a bounded reader window.  `run_build` already
+            # includes every recent sent-mail dependency by replacing the
+            # window tail, so preservation may only fill a short/incomplete
+            # local build; it must never expand the public window.
+            new_meta = dict(after.get("newsMeta") or {})
+            window_limit = max(
+                1,
+                int(new_meta.get("windowLimit") or len(new_rows) or 1),
+            )
+            new_ids = {
+                str(item.get("id") or "")
+                for item in new_rows
+                if str(item.get("id") or "")
+            }
+            old_extras = [
+                dict(item)
+                for item in old_rows
+                if str(item.get("id") or "")
+                and str(item.get("id") or "") not in new_ids
+            ]
+            rows = sorted((dict(item) for item in new_rows), key=sort_key, reverse=True)
+            if len(rows) < window_limit:
+                rows.extend(
+                    sorted(old_extras, key=sort_key, reverse=True)[
+                        : window_limit - len(rows)
+                    ]
+                )
+            rows = rows[:window_limit]
+            after_collections[name] = rows
+            preserved[name] = max(0, len(rows) - len(new_rows))
+            old_meta = dict(before.get("newsMeta") or {})
+            new_meta["totalCount"] = max(
+                int(old_meta.get("totalCount") or 0),
+                int(new_meta.get("totalCount") or 0),
+            )
+            new_meta["mirroredCount"] = len(rows)
+            new_meta["windowLimit"] = window_limit
+            after["newsMeta"] = new_meta
+            stats = dict(after.get("stats") or {})
+            stats[name] = int(new_meta["totalCount"])
+            after["stats"] = stats
+            continue
         merged = {
             str(item.get("id") or ""): dict(item)
             for item in old_rows
@@ -611,35 +661,13 @@ def preserve_existing_collections(
             continue
         rows = sorted(
             merged.values(),
-            key=lambda item: str(
-                item.get("updatedAt")
-                or item.get("publishedAt")
-                or item.get("mtime")
-                or item.get("lastUpdated")
-                or ""
-            ),
+            key=sort_key,
             reverse=True,
         )
         after_collections[name] = rows
         preserved[name] = max(0, len(rows) - len(new_rows))
         stats = dict(after.get("stats") or {})
-        if name == "news":
-            old_meta = dict(before.get("newsMeta") or {})
-            new_meta = dict(after.get("newsMeta") or {})
-            new_meta["totalCount"] = max(
-                int(old_meta.get("totalCount") or 0),
-                int(new_meta.get("totalCount") or 0),
-            )
-            new_meta["mirroredCount"] = len(rows)
-            new_meta["windowLimit"] = max(
-                len(rows),
-                int(old_meta.get("windowLimit") or 0),
-                int(new_meta.get("windowLimit") or 0),
-            )
-            after["newsMeta"] = new_meta
-            stats[name] = int(new_meta["totalCount"])
-        else:
-            stats[name] = len(rows)
+        stats[name] = len(rows)
         after["stats"] = stats
     after["collections"] = after_collections
     build_meta = dict(after.get("buildMeta") or {})
