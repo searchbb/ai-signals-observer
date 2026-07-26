@@ -1312,9 +1312,11 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
             assessment = dict(theme.get("assessment") or {})
             brief = dict(theme.get("brief") or {})
             stage = dict(theme.get("stage") or {})
+            research = dict(theme.get("research") or {})
             stage_code = str(stage.get("commercial_stage") or "insufficient")
             structured = (
-                stage_code != "insufficient"
+                bool(research.get("has_structured_assessment"))
+                and not bool(brief.get("candidate_only"))
                 and all(
                     assessment_public_text(assessment.get(key))
                     for key in labels
@@ -1339,7 +1341,8 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                         }
                     )
             current_judgment = (
-                "；".join(
+                str(brief.get("current_judgment") or "").strip()
+                or "；".join(
                     value
                     for value in (
                         assessment_public_text(
@@ -1359,7 +1362,8 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
             )
             material_change = bool(theme.get("material_change")) and structured
             updated_at = str(
-                stage.get("as_of")
+                brief.get("changed_at")
+                or stage.get("as_of")
                 or brief.get("as_of")
                 or payload.get("generated_at")
                 or ""
