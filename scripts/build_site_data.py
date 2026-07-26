@@ -1243,10 +1243,275 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
     return result
 
 
+def assessment_public_text(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return "；".join(
+            assessment_public_text(item)
+            for item in value
+            if assessment_public_text(item)
+        )
+    if not isinstance(value, dict):
+        return ""
+    preferred = (
+        "summary",
+        "judgment",
+        "value",
+        "relative_position",
+        "current_stage",
+        "gap",
+        "signal",
+        "description",
+        "transition_trigger",
+    )
+    selected = [
+        assessment_public_text(value.get(key))
+        for key in preferred
+        if assessment_public_text(value.get(key))
+    ]
+    if selected:
+        return "；".join(dict.fromkeys(selected))
+    return "；".join(
+        assessment_public_text(item)
+        for item in value.values()
+        if assessment_public_text(item)
+    )
+
+
+def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
+    projection_path = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "research_assets"
+        / "projections"
+        / "research_domains.json"
+    )
+    if not projection_path.exists():
+        return []
+    payload = json.loads(projection_path.read_text(encoding="utf-8"))
+    result: list[dict] = []
+    labels = {
+        "strategic_question": "战略问题",
+        "control_point": "价值控制点",
+        "market_evolution": "市场演进",
+        "business_model": "经营闭环",
+        "huawei_position": "华为位置",
+        "broken_bridge": "当前断点",
+        "action_signal": "下一观察信号",
+    }
+    for domain in payload.get("domains") or []:
+        if not isinstance(domain, dict):
+            continue
+        domain_id = str(domain.get("id") or "")
+        domain_name = str(domain.get("name") or "")
+        for theme in domain.get("themes") or []:
+            if not isinstance(theme, dict):
+                continue
+            assessment = dict(theme.get("assessment") or {})
+            brief = dict(theme.get("brief") or {})
+            stage = dict(theme.get("stage") or {})
+            stage_code = str(stage.get("commercial_stage") or "insufficient")
+            structured = (
+                stage_code != "insufficient"
+                and all(
+                    assessment_public_text(assessment.get(key))
+                    for key in labels
+                )
+            )
+            sections = []
+            if structured:
+                for key, label in labels.items():
+                    text = assessment_public_text(assessment.get(key))
+                    if not text:
+                        continue
+                    sections.append(
+                        {
+                            "block_id": key,
+                            "title": label,
+                            "block_type": "assessment",
+                            "markdown": text,
+                            "html": render_markdown(text),
+                            "evidence_ids": [],
+                            "evidence_cards": [],
+                            "facts": [],
+                        }
+                    )
+            current_judgment = (
+                "；".join(
+                    value
+                    for value in (
+                        assessment_public_text(
+                            assessment.get("control_point")
+                        ),
+                        assessment_public_text(
+                            assessment.get("huawei_position")
+                        ),
+                        assessment_public_text(
+                            assessment.get("broken_bridge")
+                        ),
+                    )
+                    if value
+                )
+                if structured
+                else "尚未形成经审核的七问判断；当前只显示研究问题和证据缺口。"
+            )
+            material_change = bool(theme.get("material_change")) and structured
+            updated_at = str(
+                stage.get("as_of")
+                or brief.get("as_of")
+                or payload.get("generated_at")
+                or ""
+            )
+            result.append(
+                {
+                    "id": str(theme.get("id") or ""),
+                    "type": "object",
+                    "title": str(theme.get("name") or ""),
+                    "status": "active",
+                    "category": domain_name,
+                    "summary": str(
+                        assessment.get("strategic_question")
+                        or theme.get("question")
+                        or ""
+                    ),
+                    "updatedAt": updated_at,
+                    "createdAt": "",
+                    "objectType": "research_theme",
+                    "domainId": domain_id,
+                    "domainName": domain_name,
+                    "commercialStage": stage_code,
+                    "materialChange": material_change,
+                    "domainControlPoint": str(
+                        domain.get("control_point") or ""
+                    ),
+                    "businessArchetype": str(
+                        domain.get("control_point") or ""
+                    ),
+                    "attentionLevel": str(theme.get("priority") or ""),
+                    "strategicPosition": current_judgment,
+                    "strategicThesis": current_judgment if structured else "",
+                    "updates": (
+                        [
+                            {
+                                "update_id": (
+                                    f"domain-change:{theme.get('id')}:{updated_at}"
+                                ),
+                                "event": str(
+                                    brief.get("what_changed")
+                                    or "七问战略判断发生实质变化"
+                                ),
+                                "event_date": updated_at,
+                                "impact_type": "Research Domain",
+                                "direction": "UPDATED",
+                                "evidence_cards": [],
+                            }
+                        ]
+                        if material_change
+                        else []
+                    ),
+                    "facts": [],
+                    "metrics": [],
+                    "metricSummary": {},
+                    "trends": [],
+                    "currentObservations": [],
+                    "researchBrief": {
+                        "status": str(brief.get("status") or ""),
+                        "agenda": {
+                            "question": str(
+                                assessment.get("strategic_question")
+                                or theme.get("question")
+                                or ""
+                            ),
+                            "rationale": str(theme.get("rationale") or ""),
+                        },
+                        "current_judgment": current_judgment,
+                        "what_changed": (
+                            str(brief.get("what_changed") or "")
+                            if material_change
+                            else "本轮没有形成经审核的实质判断变化。"
+                        ),
+                        "known_claims": [],
+                        "model_runs": [],
+                        "candidate_packs": [],
+                        "open_gaps": [
+                            str(value)
+                            for value in brief.get("open_gaps") or []
+                            if str(value)
+                        ],
+                        "next_actions": [
+                            str(value)
+                            for value in brief.get("next_actions") or []
+                            if str(value)
+                        ],
+                        "counterevidence": [
+                            str(value)
+                            for value in (
+                                assessment.get("counterevidence")
+                                or brief.get("counterevidence")
+                                or []
+                            )
+                            if str(value)
+                        ],
+                        "candidate_only": not structured,
+                        "fact_ledger_mutated": False,
+                    },
+                    "thesis": {"review_status": "missing"},
+                    "competitiveRelationships": [
+                        {
+                            "competitor_object_id": str(player.get("id") or ""),
+                            "competitor_name": str(player.get("name") or ""),
+                            "relationship_type": str(player.get("role") or "case"),
+                            "dimensions": [domain_name],
+                        }
+                        for player in theme.get("players") or []
+                        if isinstance(player, dict)
+                    ],
+                    "longTermSections": sections,
+                    "recentUpdates": (
+                        [
+                            {
+                                "update_id": (
+                                    f"domain-change:{theme.get('id')}:{updated_at}"
+                                ),
+                                "event": str(
+                                    brief.get("what_changed")
+                                    or "七问战略判断发生实质变化"
+                                ),
+                                "event_date": updated_at,
+                                "impact_type": "Research Domain",
+                                "direction": "UPDATED",
+                                "evidence_cards": [],
+                            }
+                        ]
+                        if material_change
+                        else []
+                    ),
+                    "recentWindowDays": 90,
+                    "alerts7d": 1 if material_change else 0,
+                    "factCount": 0,
+                    "longTermUpdatedAt": updated_at,
+                    "evidenceCoverage": {
+                        "fact_count": 0,
+                        "strategic_metric_count": 0,
+                        "approved_trend_count": 0,
+                        "current_observation_count": 0,
+                        "thesis_status": (
+                            "reviewed_assessment" if structured else "missing"
+                        ),
+                    },
+                    "html": "",
+                }
+            )
+    return result
+
+
 def parse_research_objects(*, repo_root: Path) -> list[dict]:
+    domain_themes = parse_research_domain_themes(repo_root=repo_root)
     canonical_objects = parse_canonical_research_objects(repo_root=repo_root)
     if canonical_objects:
-        return canonical_objects
+        return [*domain_themes, *canonical_objects]
     db_path = (
         repo_root
         / "data"
@@ -1255,7 +1520,7 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
         / "news_value_research_cards.sqlite3"
     )
     if not db_path.exists():
-        return canonical_objects
+        return domain_themes
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         cards = connection.execute(
@@ -1369,7 +1634,7 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
                 "html": update_html or "<p>尚无正式更新记录。</p>",
             }
         )
-    return result
+    return [*domain_themes, *result]
 
 
 def parse_strategic_signals(*, repo_root: Path) -> list[dict]:

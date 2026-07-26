@@ -373,6 +373,55 @@ function researchCard(item) {
   return `<a class="research-card" href="${routeHref("research", item.id)}"><span>${escapeHtml(item.category || "深度研究")}</span><h4>${escapeHtml(item.title)}</h4><p>${escapeHtml(displaySummary(item.summary || ""))}</p><small>${Number(item.diagramCount || 0) ? `${Number(item.diagramCount)} 张图表 · ` : ""}${escapeHtml(formatDate(item.updatedAt || item.mtime))}</small></a>`;
 }
 
+function commercialStageLabel(value) {
+  return ({
+    insufficient: "证据不足",
+    exploration: "探索",
+    pilot: "试点",
+    scaling: "规模化",
+    mature: "成熟",
+  })[String(value || "").toLowerCase()] || "证据不足";
+}
+
+function renderResearchObjectIndex(items) {
+  const themes = items.filter((item) => item.objectType === "research_theme");
+  const players = items.filter((item) => item.objectType !== "research_theme");
+  const domains = new Map();
+  themes.forEach((item) => {
+    const key = item.domainId || item.domainName || "research-domain";
+    if (!domains.has(key)) domains.set(key, []);
+    domains.get(key).push(item);
+  });
+  const domainRows = [...domains.values()].map((rows) => {
+    const first = rows[0] || {};
+    const covered = rows.filter((item) => String(item.commercialStage || "insufficient") !== "insufficient").length;
+    return `<section class="public-domain-panel">
+      <header>
+        <div><p class="eyebrow">VALUE CONTROL POINT</p><h4>${escapeHtml(first.domainName || "研究域")}</h4></div>
+        <strong>${covered}/${rows.length} 已形成七问判断</strong>
+      </header>
+      <p class="public-domain-control">${escapeHtml(first.domainControlPoint || "")}</p>
+      <div class="public-domain-theme-grid">
+        ${rows.map((item) => `<a class="public-domain-theme" href="${routeHref("object", item.id)}">
+          <div><span>${escapeHtml(commercialStageLabel(item.commercialStage))}</span>${item.materialChange ? "<b>判断有更新</b>" : ""}</div>
+          <h5>${escapeHtml(item.title)}</h5>
+          <p>${escapeHtml(displaySummary(item.summary || ""))}</p>
+          <small>${item.researchBrief?.candidate_only ? "研究补证中" : "查看战略七问判断"} →</small>
+        </a>`).join("")}
+      </div>
+    </section>`;
+  }).join("");
+  const playerRows = players.length
+    ? `<details class="public-player-browser"><summary><span>公司与产业案例</span><strong>${players.length} 个玩家档案</strong></summary><div class="editorial-list">${players.slice().sort((a, b) => timestamp(b) - timestamp(a)).map((item) => assetRow(item)).join("")}</div></details>`
+    : "";
+  return `<section class="list-panel index-page research-domain-index">
+    <div class="section-heading"><div><p class="eyebrow">RESEARCH DOMAINS</p><h3>华为云未来成功路径 <small>${themes.length} 个研究主题</small></h3></div></div>
+    <p class="index-intro">六个对象不是六块资讯，而是六个云价值控制点。每个主题持续回答战略问题、控制点、市场演进、经营闭环、华为位置、当前断点和下一观察信号。</p>
+    <div class="public-domain-stack">${domainRows || empty("研究域尚未配置。")}</div>
+    ${playerRows}
+  </section>`;
+}
+
 function renderAssetIndex(kind, items) {
   const sorted = items.slice().sort((a, b) => timestamp(b) - timestamp(a));
   const newsMeta = state.data.newsMeta || {};
@@ -387,6 +436,10 @@ function renderAssetIndex(kind, items) {
   const rows = kind === "research"
     ? `<div class="research-grid research-index">${sorted.map(researchCard).join("")}</div>`
     : `<div class="editorial-list">${sorted.slice(0, 500).map((item) => assetRow(item)).join("")}</div>`;
+  if (kind === "objects") {
+    contentEl.innerHTML = renderResearchObjectIndex(items);
+    return;
+  }
   contentEl.innerHTML = `${kind === "research" ? renderResearchIntake() : ""}<section class="list-panel index-page"><div class="section-heading"><div><p class="eyebrow">${typeLabel(kind)}</p><h3>${typeLabel(kind)} <small>${countLabel}</small></h3></div></div><p class="index-intro">${intro}</p>${rows || empty("暂无内容。")}</section>`;
   if (kind === "research") bindResearchIntake();
 }
@@ -624,7 +677,11 @@ function renderResearchObjectDetail(item, canonical) {
   const relationships = Array.isArray(item.competitiveRelationships) ? item.competitiveRelationships : [];
   const updates = Array.isArray(item.recentUpdates) ? item.recentUpdates : [];
   const coverage = item.evidenceCoverage || {};
-  const objectLabel = item.objectType === "archetype" ? "产业范式" : "核心公司";
+  const objectLabel = item.objectType === "research_theme"
+    ? "战略研究主题"
+    : item.objectType === "archetype"
+      ? "产业范式"
+      : "核心公司";
   const briefClaims = Array.isArray(researchBrief.known_claims) ? researchBrief.known_claims : [];
   const briefModels = Array.isArray(researchBrief.model_runs) ? researchBrief.model_runs : [];
   const candidatePacks = Array.isArray(researchBrief.candidate_packs) ? researchBrief.candidate_packs : [];
@@ -697,7 +754,7 @@ function renderResearchObjectDetail(item, canonical) {
       }).join("");
       return `
         <article class="object-analysis-section">
-          <p class="eyebrow">${escapeHtml(item.objectType === "archetype" ? "产业结构" : "公司结构")}</p>
+          <p class="eyebrow">${escapeHtml(item.objectType === "research_theme" ? "战略七问" : item.objectType === "archetype" ? "产业结构" : "公司结构")}</p>
           <h3>${escapeHtml(section.title || "长期观察")}</h3>
           ${section.html || section.markdown ? `<div class="object-markdown">${section.html || `<p>${escapeHtml(section.markdown || "")}</p>`}</div>` : ""}
           ${factsHtml ? `<div class="object-section-facts">${factsHtml}</div>` : ""}
@@ -730,7 +787,7 @@ function renderResearchObjectDetail(item, canonical) {
       <div class="meta-strip">
         <span>${escapeHtml(objectLabel)}</span>
         ${item.businessArchetype ? `<span>${escapeHtml(item.businessArchetype)}</span>` : ""}
-        ${item.attentionLevel ? `<span>${escapeHtml(item.attentionLevel)} 级关注</span>` : ""}
+        ${item.attentionLevel ? `<span>${item.objectType === "research_theme" ? `研究优先级 ${escapeHtml(item.attentionLevel)}` : `${escapeHtml(item.attentionLevel)} 级关注`}</span>` : ""}
         <span>长期档案更新于 ${escapeHtml(formatTime(item.longTermUpdatedAt || item.updatedAt))}</span>
       </div>
       <p class="object-description">${escapeHtml(item.summary || "")}</p>

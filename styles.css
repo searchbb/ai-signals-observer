@@ -507,6 +507,25 @@ button, input { font: inherit; }
 .event-badge.new { background: #f9e9ea; color: var(--red); }
 .timeline-copy span, .timeline-row time { color: var(--muted); font-size: .78rem; }
 .empty { padding: 36px 20px; background: var(--soft); color: var(--muted); text-align: center; }
+.research-domain-index { display: grid; gap: 18px; }
+.public-domain-stack { display: grid; gap: 15px; }
+.public-domain-panel { padding: 20px; border: 1px solid var(--line); border-top: 4px solid var(--navy); background: #fff; box-shadow: 0 6px 18px rgba(16,36,62,.05); }
+.public-domain-panel > header { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+.public-domain-panel h4 { margin: 3px 0 0; color: var(--navy); font-family: "Songti SC", "STSong", Georgia, serif; font-size: 1.45rem; }
+.public-domain-panel > header > strong { color: #31547b; font-size: .78rem; }
+.public-domain-control { margin: 10px 0 15px; color: var(--muted); line-height: 1.65; }
+.public-domain-theme-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+.public-domain-theme { display: grid; min-height: 180px; padding: 14px; border: 1px solid #dce5ef; background: #f8fafc; color: inherit; text-decoration: none; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
+.public-domain-theme:hover { transform: translateY(-2px); border-color: #7d98b8; box-shadow: 0 7px 16px rgba(16,36,62,.08); }
+.public-domain-theme > div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.public-domain-theme > div span { color: #31547b; font-size: .7rem; font-weight: 800; }
+.public-domain-theme > div b { padding: 3px 6px; background: #e8f5ee; color: #047857; font-size: .65rem; }
+.public-domain-theme h5 { margin: 12px 0 8px; color: var(--navy); font-size: 1rem; }
+.public-domain-theme p { margin: 0; color: var(--muted); font-size: .82rem; line-height: 1.62; }
+.public-domain-theme small { align-self: end; margin-top: 12px; color: var(--red); font-weight: 800; }
+.public-player-browser { margin-top: 4px; border: 1px solid var(--line); background: #f8fafc; }
+.public-player-browser > summary { display: flex; justify-content: space-between; gap: 16px; padding: 16px 18px; cursor: pointer; }
+.public-player-browser .editorial-list { padding: 0 18px 18px; }
 
 @media (max-width: 1180px) {
   .shell { grid-template-columns: 1fr; }
@@ -547,6 +566,9 @@ button, input { font: inherit; }
   .object-section-heading small { text-align: left; }
   .object-metric-grid, .object-observation-grid, .object-trend-grid, .object-risk-grid, .object-relationship-grid, .research-brief-judgment, .research-brief-claims, .research-brief-model > div, .research-brief-next { grid-template-columns: 1fr; }
   .object-update { grid-template-columns: 1fr; gap: 6px; }
+  .public-domain-panel { padding: 16px 13px; }
+  .public-domain-panel > header { align-items: start; flex-direction: column; }
+  .public-domain-theme-grid { grid-template-columns: 1fr; }
   .object-recent > summary, .object-update-list { padding-right: 14px; padding-left: 14px; }
   html.direct-detail .sidebar { padding-bottom: 0; }
   html.direct-detail .sidebar > section { display: none; }
