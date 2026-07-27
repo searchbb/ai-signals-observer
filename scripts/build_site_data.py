@@ -1311,10 +1311,17 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                 continue
             assessment = dict(theme.get("assessment") or {})
             brief = dict(theme.get("brief") or {})
+            dossier = dict(theme.get("dossier") or {})
+            dossier_synthesis = dict(dossier.get("synthesis") or {})
+            dossier_quality = dict(dossier.get("quality") or {})
+            dossier_trace = dict(dossier.get("research_trace") or {})
             stage = dict(theme.get("stage") or {})
             research = dict(theme.get("research") or {})
             stage_code = str(stage.get("commercial_stage") or "insufficient")
             structured = (
+                str(dossier.get("status") or "") == "SYNTHESIS_READY"
+                and bool(dossier_quality.get("publication_ready"))
+                and
                 bool(research.get("has_structured_assessment"))
                 and not bool(brief.get("candidate_only"))
                 and all(
@@ -1341,7 +1348,7 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                         }
                     )
             current_judgment = (
-                str(brief.get("current_judgment") or "").strip()
+                str(dossier_synthesis.get("strategic_summary") or "").strip()
                 or "；".join(
                     value
                     for value in (
@@ -1358,11 +1365,12 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                     if value
                 )
                 if structured
-                else "尚未形成经审核的七问判断；当前只显示研究问题和证据缺口。"
+                else "尚未通过主题内容门；当前只显示研究进度、实际引用来源和证据缺口。"
             )
             material_change = bool(theme.get("material_change")) and structured
             updated_at = str(
-                brief.get("changed_at")
+                dossier.get("updated_at")
+                or brief.get("changed_at")
                 or stage.get("as_of")
                 or brief.get("as_of")
                 or payload.get("generated_at")
@@ -1376,7 +1384,8 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                     "status": "active",
                     "category": domain_name,
                     "summary": str(
-                        assessment.get("strategic_question")
+                        dossier_synthesis.get("strategic_summary")
+                        or assessment.get("strategic_question")
                         or theme.get("question")
                         or ""
                     ),
@@ -1386,6 +1395,9 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                     "domainId": domain_id,
                     "domainName": domain_name,
                     "commercialStage": stage_code,
+                    "baselineStatus": str(
+                        dossier.get("status") or "NOT_STARTED"
+                    ),
                     "materialChange": material_change,
                     "domainControlPoint": str(
                         domain.get("control_point") or ""
@@ -1460,6 +1472,98 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                         ],
                         "candidate_only": not structured,
                         "fact_ledger_mutated": False,
+                    },
+                    "researchDossier": {
+                        "status": str(
+                            dossier.get("status") or "NOT_STARTED"
+                        ),
+                        "version_number": int(
+                            dossier.get("version_number") or 0
+                        ),
+                        "updated_at": str(dossier.get("updated_at") or ""),
+                        "synthesis": {
+                            key: value
+                            for key, value in dossier_synthesis.items()
+                            if key
+                            in {
+                                "strategic_summary",
+                                "why_now",
+                                "outlook_12_36m",
+                                "winner_conditions",
+                                "huawei_implications",
+                                "open_gaps",
+                                "next_actions",
+                            }
+                        },
+                        "quality": {
+                            key: value
+                            for key, value in dossier_quality.items()
+                            if key
+                            in {
+                                "source_count",
+                                "source_type_count",
+                                "source_types",
+                                "official_or_financial_count",
+                                "customer_count",
+                                "counterevidence_count",
+                                "supported_assessment_sections",
+                                "baseline_ready",
+                                "publication_ready",
+                                "missing_requirements",
+                            }
+                        },
+                        "research_trace": {
+                            key: value
+                            for key, value in dossier_trace.items()
+                            if key
+                            in {
+                                "materials_reviewed",
+                                "web_sources_added",
+                                "claims_compared",
+                                "contradictions_found",
+                                "search_scope",
+                                "material_inputs",
+                                "evidence_saved",
+                                "evidence_used",
+                                "evidence_url_verified",
+                                "model",
+                                "role",
+                            }
+                        },
+                        "evidence": [
+                            {
+                                "evidence_id": str(
+                                    item.get("evidence_id") or ""
+                                ),
+                                "source_name": str(
+                                    item.get("publisher")
+                                    or item.get("title")
+                                    or "公开来源"
+                                ),
+                                "source_grade": str(
+                                    item.get("source_grade") or ""
+                                ),
+                                "source_type": str(
+                                    item.get("source_type") or ""
+                                ),
+                                "relation": str(item.get("relation") or ""),
+                                "source_url": str(
+                                    item.get("source_url") or ""
+                                ),
+                                "published_at": str(
+                                    item.get("published_at") or ""
+                                ),
+                                "source_quote": str(
+                                    item.get("source_quote") or ""
+                                ),
+                                "verification_status": "url_reachable",
+                            }
+                            for item in dossier.get("evidence") or []
+                            if isinstance(item, dict)
+                            and str(item.get("source_url") or "").startswith(
+                                ("http://", "https://")
+                            )
+                        ],
                     },
                     "thesis": {"review_status": "missing"},
                     "competitiveRelationships": [

@@ -383,6 +383,16 @@ function commercialStageLabel(value) {
   })[String(value || "").toLowerCase()] || "证据不足";
 }
 
+function baselineStatusLabel(value) {
+  return ({
+    NOT_STARTED: "尚未研究",
+    BASELINE_BUILDING: "底稿补证中",
+    BASELINE_READY: "基础底稿已建",
+    SYNTHESIS_READY: "研究已完成",
+    INVALID: "底稿异常",
+  })[String(value || "NOT_STARTED").toUpperCase()] || "状态未知";
+}
+
 function renderResearchObjectIndex(items) {
   const themes = items.filter((item) => item.objectType === "research_theme");
   const players = items.filter((item) => item.objectType !== "research_theme");
@@ -394,7 +404,7 @@ function renderResearchObjectIndex(items) {
   });
   const domainRows = [...domains.values()].map((rows) => {
     const first = rows[0] || {};
-    const covered = rows.filter((item) => String(item.commercialStage || "insufficient") !== "insufficient").length;
+    const covered = rows.filter((item) => String(item.baselineStatus || "") === "SYNTHESIS_READY").length;
     return `<section class="public-domain-panel">
       <header>
         <div><p class="eyebrow">VALUE CONTROL POINT</p><h4>${escapeHtml(first.domainName || "研究域")}</h4></div>
@@ -403,10 +413,10 @@ function renderResearchObjectIndex(items) {
       <p class="public-domain-control">${escapeHtml(first.domainControlPoint || "")}</p>
       <div class="public-domain-theme-grid">
         ${rows.map((item) => `<a class="public-domain-theme" href="${routeHref("object", item.id)}">
-          <div><span>${escapeHtml(commercialStageLabel(item.commercialStage))}</span>${item.materialChange ? "<b>判断有更新</b>" : ""}</div>
+          <div><span>${escapeHtml(baselineStatusLabel(item.baselineStatus))}</span>${item.materialChange ? "<b>判断有更新</b>" : ""}</div>
           <h5>${escapeHtml(item.title)}</h5>
           <p>${escapeHtml(displaySummary(item.summary || ""))}</p>
-          <small>${item.researchBrief?.candidate_only ? "研究补证中" : "查看战略七问判断"} →</small>
+          <small>${item.baselineStatus === "SYNTHESIS_READY" ? "查看结论与实际引用证据" : "查看研究进度与缺口"} →</small>
         </a>`).join("")}
       </div>
     </section>`;
@@ -669,6 +679,11 @@ function researchClaimLabel(type) {
 function renderResearchObjectDetail(item, canonical) {
   const thesis = item.thesis && typeof item.thesis === "object" ? item.thesis : {};
   const researchBrief = item.researchBrief && typeof item.researchBrief === "object" ? item.researchBrief : {};
+  const researchDossier = item.researchDossier && typeof item.researchDossier === "object" ? item.researchDossier : {};
+  const dossierQuality = researchDossier.quality && typeof researchDossier.quality === "object" ? researchDossier.quality : {};
+  const dossierTrace = researchDossier.research_trace && typeof researchDossier.research_trace === "object" ? researchDossier.research_trace : {};
+  const dossierSynthesis = researchDossier.synthesis && typeof researchDossier.synthesis === "object" ? researchDossier.synthesis : {};
+  const dossierEvidence = Array.isArray(researchDossier.evidence) ? researchDossier.evidence : [];
   const approvedThesis = thesis.review_status === "approved" && thesis.thesis;
   const metrics = Array.isArray(item.metrics) ? item.metrics : [];
   const trends = Array.isArray(item.trends) ? item.trends : [];
@@ -685,6 +700,21 @@ function renderResearchObjectDetail(item, canonical) {
   const briefClaims = Array.isArray(researchBrief.known_claims) ? researchBrief.known_claims : [];
   const briefModels = Array.isArray(researchBrief.model_runs) ? researchBrief.model_runs : [];
   const candidatePacks = Array.isArray(researchBrief.candidate_packs) ? researchBrief.candidate_packs : [];
+  const baselineReady = researchDossier.status === "SYNTHESIS_READY" && dossierQuality.publication_ready === true;
+  const materialInputs = dossierTrace.material_inputs && typeof dossierTrace.material_inputs === "object" ? dossierTrace.material_inputs : {};
+  const missingRequirements = Array.isArray(dossierQuality.missing_requirements) ? dossierQuality.missing_requirements : [];
+  const dossierHtml = item.objectType === "research_theme"
+    ? `<section class="detail object-section research-dossier">
+        <div class="object-section-heading"><div><p class="eyebrow">RESEARCH DOSSIER</p><h3>主题研究底稿</h3></div><small>${escapeHtml(baselineStatusLabel(researchDossier.status))} · 只有通过内容门才计入完成</small></div>
+        <div class="dossier-status ${baselineReady ? "is-ready" : "is-building"}">
+          <div><span>BASELINE STATUS</span><h4>${escapeHtml(baselineStatusLabel(researchDossier.status))}</h4><p>${baselineReady ? "已通过内容门，可以作为当前主题判断。" : "尚未通过内容门；框架存在不等于研究完成。"}</p></div>
+          <dl><div><dt>实际引用来源</dt><dd>${Number(dossierQuality.source_count || 0)}</dd></div><div><dt>来源类型</dt><dd>${Number(dossierQuality.source_type_count || 0)}</dd></div><div><dt>官方/财务</dt><dd>${Number(dossierQuality.official_or_financial_count || 0)}</dd></div><div><dt>反证</dt><dd>${Number(dossierQuality.counterevidence_count || 0)}</dd></div></dl>
+        </div>
+        ${dossierSynthesis.strategic_summary ? `<div class="dossier-synthesis"><article><span>当前综合判断</span><p>${escapeHtml(dossierSynthesis.strategic_summary)}</p></article><article><span>为什么是现在</span><p>${escapeHtml(dossierSynthesis.why_now || "尚未形成")}</p></article><article><span>未来 12–36 个月</span><p>${escapeHtml(dossierSynthesis.outlook_12_36m || "尚未形成")}</p></article></div>` : ""}
+        <div class="dossier-trace"><article><span>系统收集了什么</span><ul><li>正式事实账本 ${Number(materialInputs.formal_fact_sources || 0)} 条</li><li>相关新闻 ${Number(materialInputs.news_sources || 0)} 条</li><li>本地问题卡/笔记 ${Number(materialInputs.local_context || 0)} 条</li><li>GPT 补充外部来源 ${Number(dossierTrace.web_sources_added || 0)} 条</li></ul></article><article><span>GPT 做了什么</span><p>主题级检索、跨来源比较、反证检查、因果推导与战略七问综合。</p><p>比较 ${Number(dossierTrace.claims_compared || 0)} 个主张，发现 ${Number(dossierTrace.contradictions_found || 0)} 个矛盾。</p></article><article><span>还缺什么</span>${missingRequirements.length ? `<ul>${missingRequirements.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : "<p>内容门已通过。</p>"}</article></div>
+        ${dossierEvidence.length ? `<details class="dossier-evidence-list"><summary><span>本轮实际引用来源</span><strong>${dossierEvidence.length} 条</strong></summary><div>${dossierEvidence.map((evidence) => renderEvidenceCard(evidence, `${evidence.source_grade || ""}级 · ${evidence.source_type || ""} · ${evidence.relation || ""}`)).join("")}</div></details>` : ""}
+      </section>`
+    : "";
   const briefHtml = researchBrief.current_judgment
     ? `<section class="detail object-section object-research-brief">
         <div class="object-section-heading"><div><p class="eyebrow">RESEARCH AGENDA</p><h3>当前研究议程</h3></div><small>问题驱动 · 事实、估算、假设与推导分层</small></div>
@@ -798,6 +828,7 @@ function renderResearchObjectDetail(item, canonical) {
         <span>已审核趋势 <b>${Number(coverage.approved_trend_count || 0)}/3</b></span>
       </div>
     </section>
+    ${dossierHtml}
     ${briefHtml}
     <section class="detail object-section object-current-observations">
       <div class="object-section-heading"><div><p class="eyebrow">CURRENT OBSERVATIONS</p><h3>当前观察与阶段性启示</h3></div><small>有证据支持，但不等同于长期趋势或预测</small></div>
