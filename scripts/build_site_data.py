@@ -798,7 +798,10 @@ STRATEGIC_THEME_TERMS = {
 
 
 def canonical_update_score(item: dict) -> int:
-    text = f"{item.get('fact_subject') or ''} {item.get('statement') or ''}".lower()
+    text = (
+        f"{item.get('fact_subject') or ''} "
+        f"{item.get('statement') or item.get('event') or ''}"
+    ).lower()
     return (
         STRATEGIC_BLOCK_WEIGHTS.get(str(item.get("block_id") or ""), 0)
         + (35 if str(item.get("asset_role") or "") == "strategic_event" else 0)
@@ -809,7 +812,10 @@ def canonical_update_score(item: dict) -> int:
 
 
 def canonical_update_signature(item: dict) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    text = f"{item.get('fact_subject') or ''} {item.get('statement') or ''}".lower()
+    text = (
+        f"{item.get('fact_subject') or ''} "
+        f"{item.get('statement') or item.get('event') or ''}"
+    ).lower()
     entities = tuple(sorted(term for term in STRATEGIC_ENTITY_TERMS if term in text))
     themes = tuple(
         sorted(
@@ -844,7 +850,7 @@ def select_strategic_object_updates(
     for item in ranked:
         if canonical_update_score(item) < 55:
             continue
-        statement_text = str(item.get("statement") or "")
+        statement_text = str(item.get("statement") or item.get("event") or "")
         lowered = statement_text.lower()
         if object_kind == "company":
             markers = [
@@ -891,6 +897,15 @@ def select_strategic_object_updates(
             signatures.add(signature)
         if len(selected) >= limit:
             break
+    # A projection-only fixture or a newly created object can legitimately
+    # have one update without placement metadata. Preserve that single
+    # non-micro signal instead of making the whole object appear empty.
+    if (
+        not selected
+        and len(updates) == 1
+        and canonical_update_score(updates[0]) >= 0
+    ):
+        selected.append(updates[0])
     return selected
 
 
@@ -1001,6 +1016,56 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 for item in object_data.get("updates_24h") or []
                 if isinstance(item, dict)
             ][:10]
+        # The canonical service deliberately returns a wider audit window.
+        # The reader-facing page must still stay strategically compressed:
+        # remove product micro-details, weak object matches and near-duplicate
+        # events, then keep only the highest-signal updates.
+        placement_lookup = {
+            str(fact_id): dict(placement)
+            for fact_id, placement in (
+                profile.get("fact_placements") or {}
+            ).items()
+            if isinstance(placement, dict)
+        }
+        scored_updates = []
+        for item in recent_updates:
+            candidate = dict(item)
+            placement = placement_lookup.get(
+                str(candidate.get("fact_id") or ""),
+                {},
+            )
+            candidate.setdefault(
+                "statement",
+                str(candidate.get("event") or ""),
+            )
+            candidate.setdefault(
+                "published_at",
+                str(
+                    candidate.get("effective_date")
+                    or candidate.get("event_date")
+                    or ""
+                ),
+            )
+            candidate.setdefault(
+                "block_id",
+                str(placement.get("block_id") or ""),
+            )
+            candidate.setdefault(
+                "asset_role",
+                str(placement.get("asset_role") or ""),
+            )
+            scored_updates.append(candidate)
+        recent_updates = select_strategic_object_updates(
+            scored_updates,
+            limit=3,
+            object_name=str(object_data.get("name") or ""),
+            object_aliases=[
+                str(value)
+                for value in object_data.get("aliases") or []
+                if str(value)
+            ],
+            object_kind=str(object_data.get("kind") or ""),
+        )
         trends = [
             {
                 **dict(item),
