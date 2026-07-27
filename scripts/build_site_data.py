@@ -1495,6 +1495,20 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                                 "next_actions",
                             }
                         },
+                        "assessment": {
+                            "outlook_basis": {
+                                key: value
+                                for key, value in dict(
+                                    assessment.get("outlook_basis") or {}
+                                ).items()
+                                if key
+                                in {
+                                    "current_evidence_ids",
+                                    "driving_mechanism",
+                                    "uncertainty",
+                                }
+                            }
+                        },
                         "quality": {
                             key: value
                             for key, value in dossier_quality.items()
@@ -1505,8 +1519,11 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                                 "source_types",
                                 "official_or_financial_count",
                                 "customer_count",
+                                "theme_bound_source_count",
                                 "counterevidence_count",
                                 "supported_assessment_sections",
+                                "coverage_matrix",
+                                "future_outlook_traceable",
                                 "baseline_ready",
                                 "publication_ready",
                                 "missing_requirements",
@@ -1555,6 +1572,9 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                                 ),
                                 "source_quote": str(
                                     item.get("source_quote") or ""
+                                ),
+                                "theme_relevance_reason": str(
+                                    item.get("theme_relevance_reason") or ""
                                 ),
                                 "verification_status": "url_reachable",
                             }

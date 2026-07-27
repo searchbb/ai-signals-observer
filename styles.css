@@ -385,6 +385,12 @@ button, input { font: inherit; }
 .dossier-synthesis article:first-child p { color: #173f33; font-size: 1.02rem; font-weight: 750; }
 .dossier-trace { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 10px; }
 .dossier-trace ul { margin-bottom: 0; padding-left: 18px; }
+.dossier-question-coverage { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 1px; margin-top: 10px; border: 1px solid var(--line); background: var(--line); }
+.dossier-question-coverage article { display: grid; gap: 6px; min-height: 72px; padding: 12px; background: #f8faf9; }
+.dossier-question-coverage article.is-covered { background: #edf7f2; }
+.dossier-question-coverage span { color: #697a73; font-size: .68rem; font-weight: 800; }
+.dossier-question-coverage strong { color: #9a3412; font-size: .8rem; }
+.dossier-question-coverage article.is-covered strong { color: #176244; }
 .dossier-evidence-list { margin-top: 12px; border: 1px solid var(--line); background: white; }
 .dossier-evidence-list > summary { display: flex; justify-content: space-between; padding: 14px 16px; cursor: pointer; }
 .dossier-evidence-list > div { display: grid; gap: 8px; padding: 0 16px 16px; }
@@ -588,7 +594,7 @@ button, input { font: inherit; }
   .object-header-actions, .object-section-heading { width: 100%; align-items: start; flex-direction: column; }
   .object-header-actions > a, .object-header-actions > button { width: 100%; text-align: center; }
   .object-section-heading small { text-align: left; }
-  .object-metric-grid, .object-observation-grid, .object-trend-grid, .object-risk-grid, .object-relationship-grid, .research-brief-judgment, .research-brief-claims, .research-brief-model > div, .research-brief-next, .dossier-status, .dossier-synthesis, .dossier-trace { grid-template-columns: 1fr; }
+  .object-metric-grid, .object-observation-grid, .object-trend-grid, .object-risk-grid, .object-relationship-grid, .research-brief-judgment, .research-brief-claims, .research-brief-model > div, .research-brief-next, .dossier-status, .dossier-synthesis, .dossier-trace, .dossier-question-coverage { grid-template-columns: 1fr; }
   .dossier-status dl { grid-template-columns: 1fr 1fr; }
   .object-update { grid-template-columns: 1fr; gap: 6px; }
   .public-domain-panel { padding: 16px 13px; }

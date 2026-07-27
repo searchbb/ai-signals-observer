@@ -650,6 +650,7 @@ function renderEvidenceCard(evidence, label = "查看证据") {
         <p><strong>来源</strong>${escapeHtml(evidence.source_name || "公开来源")} · ${escapeHtml(evidence.source_grade || "等级未标注")}</p>
         <p><strong>发布时间</strong>${escapeHtml(formatTime(evidence.published_at))}</p>
         <blockquote>${escapeHtml(evidence.source_quote || "原文摘录未公开")}</blockquote>
+        ${evidence.theme_relevance_reason ? `<p><strong>用于本主题</strong>${escapeHtml(evidence.theme_relevance_reason)}</p>` : ""}
         <p><strong>核验</strong>${escapeHtml(evidence.verification_status || "待核验")}</p>
         ${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">查看公开原文 ↗</a>` : ""}
       </div>
@@ -683,6 +684,8 @@ function renderResearchObjectDetail(item, canonical) {
   const dossierQuality = researchDossier.quality && typeof researchDossier.quality === "object" ? researchDossier.quality : {};
   const dossierTrace = researchDossier.research_trace && typeof researchDossier.research_trace === "object" ? researchDossier.research_trace : {};
   const dossierSynthesis = researchDossier.synthesis && typeof researchDossier.synthesis === "object" ? researchDossier.synthesis : {};
+  const dossierAssessment = researchDossier.assessment && typeof researchDossier.assessment === "object" ? researchDossier.assessment : {};
+  const outlookBasis = dossierAssessment.outlook_basis && typeof dossierAssessment.outlook_basis === "object" ? dossierAssessment.outlook_basis : {};
   const dossierEvidence = Array.isArray(researchDossier.evidence) ? researchDossier.evidence : [];
   const approvedThesis = thesis.review_status === "approved" && thesis.thesis;
   const metrics = Array.isArray(item.metrics) ? item.metrics : [];
@@ -703,6 +706,11 @@ function renderResearchObjectDetail(item, canonical) {
   const baselineReady = researchDossier.status === "SYNTHESIS_READY" && dossierQuality.publication_ready === true;
   const materialInputs = dossierTrace.material_inputs && typeof dossierTrace.material_inputs === "object" ? dossierTrace.material_inputs : {};
   const missingRequirements = Array.isArray(dossierQuality.missing_requirements) ? dossierQuality.missing_requirements : [];
+  const coverageMatrix = dossierQuality.coverage_matrix && typeof dossierQuality.coverage_matrix === "object" ? dossierQuality.coverage_matrix : {};
+  const coverageLabels = { strategic_question: "战略问题", control_point: "价值控制点", market_evolution: "市场演进", business_model: "商业模式", huawei_position: "华为位置", broken_bridge: "最大断点", action_signal: "行动信号" };
+  const coverageHtml = Object.entries(coverageMatrix).length
+    ? `<div class="dossier-question-coverage">${Object.entries(coverageMatrix).map(([field, value]) => `<article class="${Number(value?.count || 0) > 0 ? "is-covered" : ""}"><span>${escapeHtml(coverageLabels[field] || field)}</span><strong>${Number(value?.count || 0) > 0 ? `${Number(value.count)} 条` : "缺证据"}</strong></article>`).join("")}</div>`
+    : "";
   const dossierHtml = item.objectType === "research_theme"
     ? `<section class="detail object-section research-dossier">
         <div class="object-section-heading"><div><p class="eyebrow">RESEARCH DOSSIER</p><h3>主题研究底稿</h3></div><small>${escapeHtml(baselineStatusLabel(researchDossier.status))} · 只有通过内容门才计入完成</small></div>
@@ -710,8 +718,9 @@ function renderResearchObjectDetail(item, canonical) {
           <div><span>BASELINE STATUS</span><h4>${escapeHtml(baselineStatusLabel(researchDossier.status))}</h4><p>${baselineReady ? "已通过内容门，可以作为当前主题判断。" : "尚未通过内容门；框架存在不等于研究完成。"}</p></div>
           <dl><div><dt>实际引用来源</dt><dd>${Number(dossierQuality.source_count || 0)}</dd></div><div><dt>来源类型</dt><dd>${Number(dossierQuality.source_type_count || 0)}</dd></div><div><dt>官方/财务</dt><dd>${Number(dossierQuality.official_or_financial_count || 0)}</dd></div><div><dt>反证</dt><dd>${Number(dossierQuality.counterevidence_count || 0)}</dd></div></dl>
         </div>
-        ${dossierSynthesis.strategic_summary ? `<div class="dossier-synthesis"><article><span>当前综合判断</span><p>${escapeHtml(dossierSynthesis.strategic_summary)}</p></article><article><span>为什么是现在</span><p>${escapeHtml(dossierSynthesis.why_now || "尚未形成")}</p></article><article><span>未来 12–36 个月</span><p>${escapeHtml(dossierSynthesis.outlook_12_36m || "尚未形成")}</p></article></div>` : ""}
+        ${dossierSynthesis.strategic_summary ? `<div class="dossier-synthesis"><article><span>当前综合判断</span><p>${escapeHtml(dossierSynthesis.strategic_summary)}</p></article><article><span>为什么是现在</span><p>${escapeHtml(dossierSynthesis.why_now || "尚未形成")}</p></article><article><span>未来 12–36 个月</span><p>${escapeHtml(dossierSynthesis.outlook_12_36m || "尚未形成")}</p></article><article><span>未来判断依据</span><p><strong>驱动机制：</strong>${escapeHtml(outlookBasis.driving_mechanism || "尚未形成")}</p><p><strong>不确定性：</strong>${escapeHtml(outlookBasis.uncertainty || "尚未形成")}</p><small>绑定 ${Array.isArray(outlookBasis.current_evidence_ids) ? outlookBasis.current_evidence_ids.length : 0} 条当前证据</small></article></div>` : ""}
         <div class="dossier-trace"><article><span>系统收集了什么</span><ul><li>正式事实账本 ${Number(materialInputs.formal_fact_sources || 0)} 条</li><li>相关新闻 ${Number(materialInputs.news_sources || 0)} 条</li><li>本地问题卡/笔记 ${Number(materialInputs.local_context || 0)} 条</li><li>主动网页检索 ${Number(materialInputs.active_web_sources || 0)} 条</li><li>GPT 新补链接 ${Number(dossierTrace.web_sources_added || 0)} 条</li></ul></article><article><span>GPT 做了什么</span><p>主题级跨来源比较、反证检查、因果推导与战略七问综合。</p><p>比较 ${Number(dossierTrace.claims_compared || 0)} 个主张，发现 ${Number(dossierTrace.contradictions_found || 0)} 个矛盾。</p></article><article><span>还缺什么</span>${missingRequirements.length ? `<ul>${missingRequirements.map((value) => `<li>${escapeHtml(value)}</li>`).join("")}</ul>` : "<p>内容门已通过。</p>"}</article></div>
+        ${coverageHtml}
         ${dossierEvidence.length ? `<details class="dossier-evidence-list"><summary><span>本轮实际引用来源</span><strong>${dossierEvidence.length} 条</strong></summary><div>${dossierEvidence.map((evidence) => renderEvidenceCard(evidence, `${evidence.source_grade || ""}级 · ${evidence.source_type || ""} · ${evidence.relation || ""}`)).join("")}</div></details>` : ""}
       </section>`
     : "";
