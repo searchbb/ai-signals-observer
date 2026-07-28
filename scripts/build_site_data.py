@@ -18,7 +18,10 @@ from urllib.parse import urlparse
 
 import markdown
 from portal_schema import PORTAL_SCHEMA_VERSION, schema_descriptor, validate_portal_payload
-from public_release_policy import partition_public_items
+from public_release_policy import (
+    partition_public_items,
+    strict_visible_marker_violations,
+)
 from research_publication import VERIFIED_ADMISSION, validate_verified_manifest_row
 
 
@@ -184,6 +187,19 @@ def sanitize_public_payload(value, repo_root: Path):
     if isinstance(value, str):
         return sanitize_public_text(value, repo_root)
     return value
+
+
+def public_research_evidence_quote(value: object) -> str:
+    """Keep public research evidence from leaking publication-denied markers.
+
+    The governed dossier retains the original quote.  The public projection is
+    deliberately narrower: when a quote contains a marker reserved for
+    private/internal provenance, readers still get the public URL and evidence
+    metadata, but not the unsafe excerpt.
+    """
+
+    quote = str(value or "")
+    return "" if strict_visible_marker_violations(quote) else quote
 
 
 def repo_revision(repo_root: Path) -> str:
@@ -1635,8 +1651,8 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
                                 "published_at": str(
                                     item.get("published_at") or ""
                                 ),
-                                "source_quote": str(
-                                    item.get("source_quote") or ""
+                                "source_quote": public_research_evidence_quote(
+                                    item.get("source_quote")
                                 ),
                                 "theme_relevance_reason": str(
                                     item.get("theme_relevance_reason") or ""

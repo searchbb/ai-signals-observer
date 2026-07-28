@@ -10,11 +10,24 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from build_site_data import parse_news_rows, parse_research_objects  # noqa: E402
+from build_site_data import (  # noqa: E402
+    parse_news_rows,
+    parse_research_objects,
+    public_research_evidence_quote,
+)
 from sync_portal_data import (  # noqa: E402
     discover_recent_sent_mail_news_ids,
     preserve_existing_collections,
 )
+
+
+def test_public_research_evidence_quote_removes_private_provenance_marker() -> None:
+    assert public_research_evidence_quote("公开产品数据与客户结果") == (
+        "公开产品数据与客户结果"
+    )
+    assert public_research_evidence_quote(
+        "会议纪要作为协作语境进入需求上下文"
+    ) == ""
 
 
 def test_canonical_object_is_available_without_legacy_database(tmp_path: Path) -> None:
