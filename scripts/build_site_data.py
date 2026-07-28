@@ -40,6 +40,7 @@ FRONT_MATTER_RE = re.compile(r"^---\n(?P<body>.*?)\n---\n", re.DOTALL)
 FRONT_MATTER_KV_RE = re.compile(r"^(?P<key>[A-Za-z0-9_]+):\s*(?P<value>.+)$")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[(?P<alt>[^\]]*)\]\((?P<target>[^)]+)\)")
 SITE_ROOT = Path(__file__).resolve().parents[1]
+CODE_REPO_ROOT = Path(__file__).resolve().parents[6]
 RESEARCH_MANIFEST = Path(__file__).resolve().with_name("research_publication_manifest.json")
 
 CARD_HEADING_LABELS = {
@@ -938,6 +939,8 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
         return []
     payload = json.loads(projection_path.read_text(encoding="utf-8"))
     backend_root = repo_root / "apps" / "article-workbench" / "backend"
+    if not (backend_root / "app").exists():
+        backend_root = CODE_REPO_ROOT / "apps" / "article-workbench" / "backend"
     for path in (repo_root, backend_root):
         text = str(path)
         if text not in sys.path:
