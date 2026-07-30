@@ -12,7 +12,30 @@ from portal_schema import validate_portal_payload
 from public_release_policy import publication_violations
 
 
-ABSOLUTE_PATH = re.compile(r"(?:/Users/|[A-Za-z]:\\\\)")
+POSIX_USER_HOME_PATH = re.compile(r"/Users/[^/\\\s\"']+")
+WINDOWS_USER_HOME_PATH = re.compile(
+    r"[A-Za-z]:\\(?:Users|Documents and Settings)\\",
+    re.IGNORECASE,
+)
+
+
+def contains_absolute_workstation_path(value: object) -> bool:
+    """Detect user-home leaks without rejecting ordinary editorial path text."""
+
+    if isinstance(value, str):
+        return bool(
+            POSIX_USER_HOME_PATH.search(value)
+            or WINDOWS_USER_HOME_PATH.search(value)
+        )
+    if isinstance(value, dict):
+        return any(
+            contains_absolute_workstation_path(key)
+            or contains_absolute_workstation_path(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(contains_absolute_workstation_path(item) for item in value)
+    return False
 
 
 def validate_portal_file(path: Path) -> dict[str, object]:
@@ -71,8 +94,7 @@ def validate_portal_file(path: Path) -> dict[str, object]:
     if orphan_timeline:
         errors.append(f"orphan timeline rows: {', '.join(orphan_timeline[:10])}")
 
-    serialized = json.dumps(payload, ensure_ascii=False)
-    if ABSOLUTE_PATH.search(serialized):
+    if contains_absolute_workstation_path(payload):
         errors.append("public payload contains an absolute workstation path")
     build_meta = dict(payload.get("buildMeta") or {})
     for field in ("buildId", "sourceDigest", "sourceRevision", "generatorVersion"):

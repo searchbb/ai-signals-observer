@@ -58,7 +58,14 @@ def sync_site_data(
         command.extend(["--preserve-existing-collection", collection])
     for article_id in required_news_ids or []:
         command.extend(["--required-news-id", str(article_id)])
-    run = subprocess.run(command, check=True, text=True, capture_output=True)
+    run = subprocess.run(command, check=False, text=True, capture_output=True)
+    if run.returncode != 0:
+        detail = (run.stderr or run.stdout).strip()
+        if len(detail) > 4000:
+            detail = detail[-4000:]
+        raise RuntimeError(
+            f"sync_portal_data.py failed with exit code {run.returncode}: {detail}"
+        )
     return json.loads(run.stdout)
 
 
