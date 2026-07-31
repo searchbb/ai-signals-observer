@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections import Counter
@@ -52,39 +53,208 @@ def strict_visible_marker_violations(value: object) -> list[str]:
     ]
 
 
-def verified_public_evidence_for_text(
-    target: object,
-    evidence: object,
-) -> bool:
-    """Require a verified public quote that covers every matched marker."""
+def record_evidence_items(record: dict) -> list[dict]:
+    evidence: list[dict] = []
+    direct = record.get("evidence")
+    if isinstance(direct, dict):
+        evidence.append(direct)
+    evidence.extend(
+        item
+        for item in list(record.get("evidence_cards") or [])
+        if isinstance(item, dict)
+    )
+    return evidence
 
-    evidence_item = dict(evidence or {})
-    if (
-        not public_http_url(evidence_item.get("source_url"))
-        or str(evidence_item.get("verification_status") or "")
-        not in VERIFIED_PUBLIC_EVIDENCE_STATUSES
-    ):
-        return False
-    target_codes = strict_visible_marker_violations(target)
-    if not target_codes:
-        return True
-    quote = str(evidence_item.get("source_quote") or "").casefold()
-    for code in target_codes:
+
+def direct_reader_payload(record: dict) -> dict:
+    """Keep direct reader fields while leaving nested records independent."""
+
+    payload: dict = {}
+    for key, value in record.items():
+        if key in {
+            "evidence",
+            "evidence_cards",
+            "html",
+            "publication_binding",
+        }:
+            continue
+        if isinstance(value, dict):
+            continue
+        if isinstance(value, list):
+            scalar_items = [
+                item
+                for item in value
+                if not isinstance(item, (dict, list))
+            ]
+            if scalar_items:
+                payload[key] = scalar_items
+            continue
+        payload[key] = value
+    return payload
+
+
+def claim_text(record: dict) -> str:
+    return str(
+        record.get("statement")
+        or record.get("event")
+        or record.get("claim")
+        or ""
+    )
+
+
+def record_claim_id(record: dict) -> str:
+    return str(
+        record.get("fact_id")
+        or record.get("claim_id")
+        or record.get("update_id")
+        or ""
+    )
+
+
+def semantic_release_record(value: object) -> bool:
+    return (
+        isinstance(value, dict)
+        and isinstance(value.get("publication_binding"), dict)
+    )
+
+
+def marker_codes_covered_by_quote(
+    marker_codes: set[str],
+    quote: object,
+) -> bool:
+    lowered_quote = str(quote or "").casefold()
+    for code in marker_codes:
         index = int(code.rsplit("_", 1)[-1])
-        if STRICT_VISIBLE_MARKERS[index - 1].casefold() not in quote:
+        if STRICT_VISIBLE_MARKERS[index - 1].casefold() not in lowered_quote:
             return False
     return True
 
 
-def verified_public_evidence_card(
-    target: object,
-    evidence_cards: object,
-) -> bool:
-    return any(
-        verified_public_evidence_for_text(target, evidence)
-        for evidence in list(evidence_cards or [])
-        if isinstance(evidence, dict)
-    )
+def verified_publication_binding(
+    record: dict,
+) -> tuple[bool, set[str]]:
+    """Trust only an upstream claim/evidence certificate bound by IDs and hash."""
+
+    binding = dict(record.get("publication_binding") or {})
+    claim = claim_text(record)
+    claim_codes = set(strict_visible_marker_violations(claim))
+    if (
+        binding.get("binding_type") != "canonical_claim_evidence_v1"
+        or not str(binding.get("binding_id") or "")
+        or str(binding.get("claim_id") or "") != record_claim_id(record)
+        or str(binding.get("claim_sha256") or "")
+        != hashlib.sha256(claim.encode("utf-8")).hexdigest()
+        or binding.get("support_status") != "claim_supported"
+        or binding.get("review_status") != "fact_confirmed"
+        or binding.get("validator") != "research_updates.review_status"
+    ):
+        return False, set()
+    bound_evidence_id = str(binding.get("evidence_id") or "")
+    evidence_items = record_evidence_items(record)
+    for evidence in evidence_items:
+        evidence_id = str(evidence.get("evidence_id") or "")
+        if (
+            evidence_id != bound_evidence_id
+            or not public_http_url(evidence.get("source_url"))
+            or str(evidence.get("verification_status") or "")
+            not in VERIFIED_PUBLIC_EVIDENCE_STATUSES
+            or not marker_codes_covered_by_quote(
+                claim_codes,
+                evidence.get("source_quote"),
+            )
+        ):
+            continue
+        quote_codes = set(
+            strict_visible_marker_violations(
+                evidence.get("source_quote") or ""
+            )
+        )
+        return True, claim_codes | quote_codes
+    return False, set()
+
+
+def evidence_aware_marker_violations(
+    value: object,
+    *,
+    inherited_authorized_codes: set[str] | None = None,
+) -> tuple[set[str], set[str]]:
+    """Recursively validate explicit semantic records without path allowlists."""
+
+    inherited = set(inherited_authorized_codes or ())
+    violations: set[str] = set()
+    authorized_codes: set[str] = set(inherited)
+    if isinstance(value, dict):
+        direct_payload = direct_reader_payload(value)
+        direct_codes = set(strict_visible_marker_violations(direct_payload))
+        evidence_items = record_evidence_items(value)
+        bound, bound_codes = verified_publication_binding(value)
+        if semantic_release_record(value):
+            if bound:
+                authorized_codes.update(bound_codes)
+                violations.update(direct_codes - bound_codes)
+            else:
+                violations.update(direct_codes)
+        else:
+            violations.update(direct_codes - inherited)
+            for evidence in evidence_items:
+                violations.update(
+                    strict_visible_marker_violations(
+                        evidence.get("source_quote") or ""
+                    )
+                )
+
+        for key, child in value.items():
+            if key in {
+                "evidence",
+                "evidence_cards",
+                "html",
+                "publication_binding",
+            }:
+                continue
+            nested_items: list[object] = []
+            if isinstance(child, dict):
+                nested_items = [child]
+            elif isinstance(child, list):
+                nested_items = [
+                    item
+                    for item in child
+                    if isinstance(item, (dict, list))
+                ]
+            for nested in nested_items:
+                child_inherited = (
+                    set()
+                    if semantic_release_record(nested)
+                    else set(authorized_codes)
+                )
+                child_violations, child_authorized = (
+                    evidence_aware_marker_violations(
+                        nested,
+                        inherited_authorized_codes=child_inherited,
+                    )
+                )
+                violations.update(child_violations)
+                authorized_codes.update(child_authorized)
+
+        html_codes = set(
+            strict_visible_marker_violations(value.get("html") or "")
+        )
+        violations.update(html_codes - authorized_codes)
+        return violations, authorized_codes
+    if isinstance(value, list):
+        for child in value:
+            child_violations, child_authorized = (
+                evidence_aware_marker_violations(
+                    child,
+                    inherited_authorized_codes=inherited,
+                )
+            )
+            violations.update(child_violations)
+            authorized_codes.update(child_authorized)
+        return violations, authorized_codes
+    scalar_codes = set(strict_visible_marker_violations(value))
+    violations.update(scalar_codes - inherited)
+    authorized_codes.update(scalar_codes & inherited)
+    return violations, authorized_codes
 
 
 def public_http_url(value: object) -> bool:
@@ -93,91 +263,10 @@ def public_http_url(value: object) -> bool:
 
 
 def object_marker_violations(item: dict) -> list[str]:
-    """Allow reported internal events only when their public evidence is verified."""
+    """Allow sensitive public facts only with an upstream binding certificate."""
 
-    violations = strict_visible_marker_violations(
-        {
-            key: value
-            for key, value in item.items()
-            if key not in {
-                "updates",
-                "facts",
-                "html",
-                "longTermSections",
-            }
-        }
-    )
-    evidence_authorized_codes: set[str] = set()
-    verified_fact_ids: set[str] = set()
-    for update in list(item.get("updates") or []):
-        update_violations = strict_visible_marker_violations(update)
-        if not update_violations:
-            continue
-        evidence = dict(update.get("evidence") or {})
-        if verified_public_evidence_for_text(update, evidence):
-            evidence_authorized_codes.update(update_violations)
-            fact_id = str(update.get("fact_id") or "")
-            if fact_id:
-                verified_fact_ids.add(fact_id)
-            continue
-        violations.extend(update_violations)
-    for fact in list(item.get("facts") or []):
-        fact_violations = strict_visible_marker_violations(fact)
-        if not fact_violations:
-            continue
-        if (
-            str(fact.get("fact_id") or "") in verified_fact_ids
-            and public_http_url(fact.get("source_url"))
-            and str(fact.get("status") or "") in {"confirmed", "fact_confirmed"}
-        ):
-            evidence_authorized_codes.update(fact_violations)
-            continue
-        violations.extend(fact_violations)
-    for section in list(item.get("longTermSections") or []):
-        if not isinstance(section, dict):
-            violations.extend(strict_visible_marker_violations(section))
-            continue
-        section_metadata = {
-            key: value
-            for key, value in section.items()
-            if key not in {"facts", "html", "evidence_cards"}
-        }
-        section_violations = strict_visible_marker_violations(section_metadata)
-        if section_violations:
-            if verified_public_evidence_card(
-                section_metadata,
-                section.get("evidence_cards"),
-            ):
-                evidence_authorized_codes.update(section_violations)
-            else:
-                violations.extend(section_violations)
-        for fact in list(section.get("facts") or []):
-            if not isinstance(fact, dict):
-                violations.extend(strict_visible_marker_violations(fact))
-                continue
-            fact_violations = strict_visible_marker_violations(fact)
-            if not fact_violations:
-                continue
-            if verified_public_evidence_card(
-                fact,
-                fact.get("evidence_cards"),
-            ):
-                evidence_authorized_codes.update(fact_violations)
-                continue
-            violations.extend(fact_violations)
-        section_html_violations = strict_visible_marker_violations(
-            section.get("html") or ""
-        )
-        violations.extend(
-            code
-            for code in section_html_violations
-            if code not in evidence_authorized_codes
-        )
-    html_violations = strict_visible_marker_violations(item.get("html") or "")
-    violations.extend(
-        code
-        for code in html_violations
-        if code not in evidence_authorized_codes
+    violations, _ = evidence_aware_marker_violations(
+        item,
     )
     return sorted(set(violations))
 
