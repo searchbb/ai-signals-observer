@@ -953,6 +953,7 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
     evidence_by_id: dict[str, dict] = {}
     fact_by_id: dict[str, dict] = {}
     evidence_ids_by_fact: dict[str, list[str]] = {}
+    publication_binding_by_fact: dict[str, dict] = {}
     evidence_db = (
         repo_root
         / "data"
@@ -985,6 +986,32 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                     """
                 ).fetchall()
             }
+            for row in connection.execute(
+                """
+                SELECT u.update_id, u.fact_id, u.evidence_id, u.review_status,
+                       f.statement
+                FROM research_updates AS u
+                JOIN fact_updates AS f ON f.fact_id=u.fact_id
+                WHERE u.review_status='fact_confirmed'
+                ORDER BY u.fact_id, u.update_id
+                """
+            ).fetchall():
+                fact_id = str(row["fact_id"])
+                publication_binding_by_fact.setdefault(
+                    fact_id,
+                    {
+                        "binding_type": "canonical_claim_evidence_v1",
+                        "binding_id": str(row["update_id"]),
+                        "claim_id": fact_id,
+                        "claim_sha256": hashlib.sha256(
+                            str(row["statement"]).encode("utf-8")
+                        ).hexdigest(),
+                        "evidence_id": str(row["evidence_id"]),
+                        "support_status": "claim_supported",
+                        "review_status": str(row["review_status"]),
+                        "validator": "research_updates.review_status",
+                    },
+                )
             for row in connection.execute(
                 """
                 SELECT fact_id, evidence_id
@@ -1073,6 +1100,11 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                 "asset_role",
                 str(placement.get("asset_role") or ""),
             )
+            binding = publication_binding_by_fact.get(
+                str(candidate.get("fact_id") or "")
+            )
+            if binding:
+                candidate["publication_binding"] = dict(binding)
             scored_updates.append(candidate)
         recent_updates = select_strategic_object_updates(
             scored_updates,
@@ -1165,8 +1197,7 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                         evidence_ids.append(evidence_id)
                 evidence_ids.extend(evidence_ids_by_fact.get(fact_id, []))
                 evidence_ids = list(dict.fromkeys(evidence_ids))
-                section_facts.append(
-                    {
+                projected_fact = {
                         "fact_id": fact_id,
                         "subject": str(fact.get("fact_subject") or ""),
                         "statement": str(fact.get("statement") or ""),
@@ -1184,7 +1215,10 @@ def parse_canonical_research_objects(*, repo_root: Path) -> list[dict]:
                             if evidence_id in evidence_by_id
                         ],
                     }
-                )
+                binding = publication_binding_by_fact.get(fact_id)
+                if binding:
+                    projected_fact["publication_binding"] = dict(binding)
+                section_facts.append(projected_fact)
             section_facts.sort(
                 key=lambda item: str(item.get("published_at") or ""),
                 reverse=True,
