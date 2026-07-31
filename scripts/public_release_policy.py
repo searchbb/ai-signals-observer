@@ -52,6 +52,41 @@ def strict_visible_marker_violations(value: object) -> list[str]:
     ]
 
 
+def verified_public_evidence_for_text(
+    target: object,
+    evidence: object,
+) -> bool:
+    """Require a verified public quote that covers every matched marker."""
+
+    evidence_item = dict(evidence or {})
+    if (
+        not public_http_url(evidence_item.get("source_url"))
+        or str(evidence_item.get("verification_status") or "")
+        not in VERIFIED_PUBLIC_EVIDENCE_STATUSES
+    ):
+        return False
+    target_codes = strict_visible_marker_violations(target)
+    if not target_codes:
+        return True
+    quote = str(evidence_item.get("source_quote") or "").casefold()
+    for code in target_codes:
+        index = int(code.rsplit("_", 1)[-1])
+        if STRICT_VISIBLE_MARKERS[index - 1].casefold() not in quote:
+            return False
+    return True
+
+
+def verified_public_evidence_card(
+    target: object,
+    evidence_cards: object,
+) -> bool:
+    return any(
+        verified_public_evidence_for_text(target, evidence)
+        for evidence in list(evidence_cards or [])
+        if isinstance(evidence, dict)
+    )
+
+
 def public_http_url(value: object) -> bool:
     parsed = urlparse(str(value or "").strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
@@ -64,20 +99,23 @@ def object_marker_violations(item: dict) -> list[str]:
         {
             key: value
             for key, value in item.items()
-            if key not in {"updates", "facts", "html"}
+            if key not in {
+                "updates",
+                "facts",
+                "html",
+                "longTermSections",
+            }
         }
     )
+    evidence_authorized_codes: set[str] = set()
     verified_fact_ids: set[str] = set()
     for update in list(item.get("updates") or []):
         update_violations = strict_visible_marker_violations(update)
         if not update_violations:
             continue
         evidence = dict(update.get("evidence") or {})
-        if (
-            public_http_url(evidence.get("source_url"))
-            and str(evidence.get("verification_status") or "")
-            in VERIFIED_PUBLIC_EVIDENCE_STATUSES
-        ):
+        if verified_public_evidence_for_text(update, evidence):
+            evidence_authorized_codes.update(update_violations)
             fact_id = str(update.get("fact_id") or "")
             if fact_id:
                 verified_fact_ids.add(fact_id)
@@ -92,8 +130,55 @@ def object_marker_violations(item: dict) -> list[str]:
             and public_http_url(fact.get("source_url"))
             and str(fact.get("status") or "") in {"confirmed", "fact_confirmed"}
         ):
+            evidence_authorized_codes.update(fact_violations)
             continue
         violations.extend(fact_violations)
+    for section in list(item.get("longTermSections") or []):
+        if not isinstance(section, dict):
+            violations.extend(strict_visible_marker_violations(section))
+            continue
+        section_metadata = {
+            key: value
+            for key, value in section.items()
+            if key not in {"facts", "html", "evidence_cards"}
+        }
+        section_violations = strict_visible_marker_violations(section_metadata)
+        if section_violations:
+            if verified_public_evidence_card(
+                section_metadata,
+                section.get("evidence_cards"),
+            ):
+                evidence_authorized_codes.update(section_violations)
+            else:
+                violations.extend(section_violations)
+        for fact in list(section.get("facts") or []):
+            if not isinstance(fact, dict):
+                violations.extend(strict_visible_marker_violations(fact))
+                continue
+            fact_violations = strict_visible_marker_violations(fact)
+            if not fact_violations:
+                continue
+            if verified_public_evidence_card(
+                fact,
+                fact.get("evidence_cards"),
+            ):
+                evidence_authorized_codes.update(fact_violations)
+                continue
+            violations.extend(fact_violations)
+        section_html_violations = strict_visible_marker_violations(
+            section.get("html") or ""
+        )
+        violations.extend(
+            code
+            for code in section_html_violations
+            if code not in evidence_authorized_codes
+        )
+    html_violations = strict_visible_marker_violations(item.get("html") or "")
+    violations.extend(
+        code
+        for code in html_violations
+        if code not in evidence_authorized_codes
+    )
     return sorted(set(violations))
 
 
