@@ -677,6 +677,78 @@ function researchClaimLabel(type) {
   })[type] || type || "研究声明";
 }
 
+function stripTopicSourceRefs(value) {
+  return String(value || "")
+    .replace(/\[S\d+\]/g, "")
+    .replace(/\s+([，。；：、])/g, "$1")
+    .trim();
+}
+
+function topicSourceUrl(value) {
+  try {
+    const url = new URL(String(value || ""));
+    return ["http:", "https:"].includes(url.protocol) ? url.href : "";
+  } catch (_error) {
+    return "";
+  }
+}
+
+function renderTopicSourceChips(refs, sourceMap) {
+  const sources = [...new Set(Array.isArray(refs) ? refs : [])]
+    .map((ref) => sourceMap.get(String(ref || "")))
+    .filter(Boolean);
+  if (!sources.length) return "";
+  return `<div class="topic-source-chips">${sources.map((source) => {
+    const label = source.title || source.publisher || "公开来源";
+    const url = topicSourceUrl(source.source_url);
+    return url
+      ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${escapeHtml(label)} ↗</a>`
+      : `<span>${escapeHtml(label)}</span>`;
+  }).join("")}</div>`;
+}
+
+function renderTopicReport(report) {
+  if (!report || typeof report !== "object") return "";
+  const paths = Array.isArray(report.path_comparison) ? report.path_comparison : [];
+  const findings = Array.isArray(report.key_findings) ? report.key_findings : [];
+  const mechanism = Array.isArray(report.mechanism_chain) ? report.mechanism_chain : [];
+  const sources = Array.isArray(report.source_appendix) ? report.source_appendix : [];
+  const sourceMap = new Map(sources.map((source) => [String(source.ref || ""), source]));
+  const sourceClasses = [...new Set(sources.map((source) => source.source_class).filter(Boolean))];
+  const debate = report.debate && typeof report.debate === "object" ? report.debate : {};
+  const stageClass = (stage) => `is-${({ "探索": "explore", "试点": "pilot", "局部生产": "production", "规模生产": "scale", "商业闭环": "closed" })[stage] || "unknown"}`;
+  const list = (items) => (Array.isArray(items) && items.length)
+    ? `<ul>${items.map((value) => `<li>${escapeHtml(stripTopicSourceRefs(value))}</li>`).join("")}</ul>`
+    : "<p>暂无。</p>";
+
+  return `<section class="detail topic-report">
+    <header class="topic-report-hero">
+      <p class="eyebrow">TOPIC REPORT · 专题研究</p>
+      <h2>${escapeHtml(report.title || "专题研究")}</h2>
+      <p class="topic-question">${escapeHtml(stripTopicSourceRefs(report.central_question))}</p>
+      <blockquote>${escapeHtml(stripTopicSourceRefs(report.executive_thesis))}</blockquote>
+      <div class="topic-report-meta"><span>${sources.length} 条实际引用</span><span>${sourceClasses.length} 类材料</span><span>GPT 终审通过</span></div>
+    </header>
+    <div class="topic-section-heading"><div><p class="eyebrow">PATH COMPARISON</p><h3>四条路径，不竞争同一个阶段</h3></div><small>先看位置与控制点，证据按需展开</small></div>
+    <div class="topic-path-grid">${paths.map((path) => `<article class="topic-path-card">
+      <div><span class="topic-stage ${stageClass(path.current_stage)}">${escapeHtml(path.current_stage || "阶段未知")}</span><small>独立取证 · 同口径比较</small></div>
+      <h4>${escapeHtml(path.path || "未命名路径")}</h4>
+      <p><strong>控制点</strong>${escapeHtml(stripTopicSourceRefs(path.control_point))}</p>
+      <details><summary>展开证据与边界</summary><dl><div><dt>最强信号</dt><dd>${escapeHtml(stripTopicSourceRefs(path.strongest_signal))}</dd></div><div><dt>资源传导</dt><dd>${escapeHtml(stripTopicSourceRefs(path.infra_pull_through))}</dd></div><div><dt>主要约束</dt><dd>${escapeHtml(stripTopicSourceRefs(path.main_constraint))}</dd></div></dl>${renderTopicSourceChips(path.source_refs, sourceMap)}</details>
+    </article>`).join("")}</div>
+    <div class="topic-section-heading"><div><p class="eyebrow">RESEARCH FINDINGS</p><h3>这轮研究真正得到的判断</h3></div><small>判断在前，推导与反证折叠</small></div>
+    <div class="topic-finding-grid">${findings.map((finding, index) => `<details class="topic-finding" ${index === 0 ? "open" : ""}>
+      <summary><span>${String(index + 1).padStart(2, "0")}</span><div><h4>${escapeHtml(finding.title || "研究发现")}</h4><p>${escapeHtml(stripTopicSourceRefs(finding.judgment))}</p></div></summary>
+      <div class="topic-finding-body"><article><strong>为什么</strong><p>${escapeHtml(stripTopicSourceRefs(finding.mechanism))}</p></article><article><strong>证据</strong><p>${escapeHtml(stripTopicSourceRefs(finding.evidence))}</p></article><article><strong>反证与边界</strong><p>${escapeHtml(stripTopicSourceRefs(finding.counterevidence))}</p></article><article><strong>什么会推翻</strong><p>${escapeHtml(stripTopicSourceRefs(finding.reversal))}</p></article>${renderTopicSourceChips(finding.source_refs, sourceMap)}</div>
+    </details>`).join("")}</div>
+    ${mechanism.length ? `<div class="topic-mechanism"><div><p class="eyebrow">MECHANISM</p><h3>从 Agent 到云资源，怎么传导</h3></div><ol>${mechanism.map((value) => `<li>${escapeHtml(stripTopicSourceRefs(value))}</li>`).join("")}</ol></div>` : ""}
+    <details class="topic-more"><summary>研究边界、下一步与全部来源</summary><div class="topic-debate"><article><h4>当前共识</h4>${list(debate.consensus)}</article><article><h4>仍有争议</h4>${list(debate.disputes)}</article><article><h4>尚不能证明</h4>${list(debate.unknowns)}</article></div><article class="topic-next"><h4>下一阶段判断</h4><p>${escapeHtml(stripTopicSourceRefs(report.next_stage))}</p><h4>接下来验证什么</h4>${list(report.watch_signals)}</article><div class="topic-source-list">${sources.map((source) => {
+      const url = topicSourceUrl(source.source_url);
+      return `<article><div><strong>${escapeHtml(source.title || source.publisher || "公开来源")}</strong><span>${escapeHtml(source.source_grade || "")}${source.source_class ? `级 · ${escapeHtml(source.source_class)}` : ""}</span></div><p>${escapeHtml(stripTopicSourceRefs(source.quote || ""))}</p>${url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noreferrer">查看原文 ↗</a>` : ""}</article>`;
+    }).join("")}</div></div></details>
+  </section>`;
+}
+
 function renderResearchObjectDetail(item, canonical) {
   const thesis = item.thesis && typeof item.thesis === "object" ? item.thesis : {};
   const researchBrief = item.researchBrief && typeof item.researchBrief === "object" ? item.researchBrief : {};
@@ -706,6 +778,7 @@ function renderResearchObjectDetail(item, canonical) {
   const baselineReady = researchDossier.status === "SYNTHESIS_READY" && dossierQuality.publication_ready === true;
   const materialInputs = dossierTrace.material_inputs && typeof dossierTrace.material_inputs === "object" ? dossierTrace.material_inputs : {};
   const missingRequirements = Array.isArray(dossierQuality.missing_requirements) ? dossierQuality.missing_requirements : [];
+  const topicReportHtml = renderTopicReport(item.topicReport);
   const coverageMatrix = dossierQuality.coverage_matrix && typeof dossierQuality.coverage_matrix === "object" ? dossierQuality.coverage_matrix : {};
   const coverageLabels = { strategic_question: "战略问题", control_point: "价值控制点", market_evolution: "市场演进", business_model: "商业模式", huawei_position: "华为位置", broken_bridge: "最大断点", action_signal: "行动信号" };
   const coverageHtml = Object.entries(coverageMatrix).length
@@ -837,6 +910,7 @@ function renderResearchObjectDetail(item, canonical) {
         <span>已审核趋势 <b>${Number(coverage.approved_trend_count || 0)}/3</b></span>
       </div>
     </section>
+    ${topicReportHtml}
     ${dossierHtml}
     ${briefHtml}
     <section class="detail object-section object-current-observations">
@@ -890,6 +964,10 @@ function observationRelationLabel(type) {
 
 function renderDetail(type, item) {
   if (!item) return renderMissing();
+  document.documentElement.classList.toggle(
+    "topic-report-detail",
+    type === "object" && Boolean(item.topicReport),
+  );
   const relations = relatedAssets(type, item.id);
   const canonical = `${location.origin}${location.pathname}${routeHref(type, item.id)}`;
   if (type === "object") {

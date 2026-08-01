@@ -1753,11 +1753,46 @@ def parse_research_domain_themes(*, repo_root: Path) -> list[dict]:
     return result
 
 
+def attach_topic_reports(items: list[dict], *, repo_root: Path) -> list[dict]:
+    """Attach validated, reader-facing Topic Reports to their research object."""
+    root = (
+        repo_root
+        / "data"
+        / "semantic_pipeline_v2"
+        / "research_assets"
+        / "topic_reports"
+    )
+    if not root.exists():
+        return items
+    by_id = {str(item.get("id") or ""): item for item in items}
+    for path in sorted(root.glob("*.json")):
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        audit = report.get("audit") if isinstance(report, dict) else None
+        if not isinstance(audit, dict) or audit.get("schema_version") != "kfc_topic_report_v2":
+            continue
+        target = by_id.get(path.stem)
+        if target is None:
+            continue
+        if not str(report.get("title") or "").strip():
+            continue
+        if not str(report.get("central_question") or "").strip():
+            continue
+        if not isinstance(report.get("path_comparison"), list):
+            continue
+        target["topicReport"] = report
+    return items
+
+
 def parse_research_objects(*, repo_root: Path) -> list[dict]:
     domain_themes = parse_research_domain_themes(repo_root=repo_root)
     canonical_objects = parse_canonical_research_objects(repo_root=repo_root)
     if canonical_objects:
-        return [*domain_themes, *canonical_objects]
+        return attach_topic_reports(
+            [*domain_themes, *canonical_objects], repo_root=repo_root
+        )
     db_path = (
         repo_root
         / "data"
@@ -1766,7 +1801,7 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
         / "news_value_research_cards.sqlite3"
     )
     if not db_path.exists():
-        return domain_themes
+        return attach_topic_reports(domain_themes, repo_root=repo_root)
     with sqlite3.connect(f"file:{db_path}?mode=ro", uri=True) as connection:
         connection.row_factory = sqlite3.Row
         cards = connection.execute(
@@ -1880,7 +1915,7 @@ def parse_research_objects(*, repo_root: Path) -> list[dict]:
                 "html": update_html or "<p>尚无正式更新记录。</p>",
             }
         )
-    return [*domain_themes, *result]
+    return attach_topic_reports([*domain_themes, *result], repo_root=repo_root)
 
 
 def parse_strategic_signals(*, repo_root: Path) -> list[dict]:
@@ -2399,6 +2434,22 @@ def main() -> None:
             for path in sorted(research_asset_stage.rglob("*"))
             if path.is_file()
         ],
+        "topicReports": [
+            (
+                path.relative_to(repo_root).as_posix(),
+                hashlib.sha256(path.read_bytes()).hexdigest(),
+            )
+            for path in sorted(
+                (
+                    repo_root
+                    / "data"
+                    / "semantic_pipeline_v2"
+                    / "research_assets"
+                    / "topic_reports"
+                ).glob("*.json")
+            )
+            if path.is_file()
+        ],
         "topics": [(item["id"], item.get("lastUpdated")) for item in topic_rows],
         "issues": [(item["id"], item.get("updatedAt") or item.get("mtime")) for item in issues],
         "cards": [(item["id"], item.get("updatedAt") or item.get("mtime")) for item in cards],
@@ -2430,6 +2481,7 @@ def main() -> None:
                 "articles": "data/semantic_pipeline_v2/articles",
                 "news_db": "data/news_library/news_library.sqlite3",
                 "research_object_db": "data/semantic_pipeline_v2/loop_engineering/news_value_research_cards.sqlite3",
+                "topic_reports": "data/semantic_pipeline_v2/research_assets/topic_reports",
                 "strategic_signal_db": "data/semantic_pipeline_v2/loop_engineering/news_value_signal_registry.sqlite3",
             },
             "notes": [

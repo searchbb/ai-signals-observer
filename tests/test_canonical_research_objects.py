@@ -103,6 +103,21 @@ def test_canonical_object_is_available_without_legacy_database(tmp_path: Path) -
         ),
         encoding="utf-8",
     )
+    topic_report = projection.parent.parent / "topic_reports" / "obj_archetype_agent_platform.json"
+    topic_report.parent.mkdir(parents=True)
+    topic_report.write_text(
+        json.dumps(
+            {
+                "title": "Agent 平台竞争不只取决于模型",
+                "central_question": "谁先进入生产？",
+                "executive_thesis": "任务控制权与可重复交付共同决定生产成熟度。",
+                "path_comparison": [{"path": "工具 Agent"}],
+                "audit": {"schema_version": "kfc_topic_report_v2"},
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
 
     objects = parse_research_objects(repo_root=tmp_path)
 
@@ -113,6 +128,7 @@ def test_canonical_object_is_available_without_legacy_database(tmp_path: Path) -
         "Agent 使用是否转化为付费工作流？"
     )
     assert objects[0]["updatedAt"] == "2026-07-24T09:00:00Z"
+    assert objects[0]["topicReport"]["title"] == "Agent 平台竞争不只取决于模型"
 
 
 def test_required_mail_news_replaces_window_tail_instead_of_expanding_it(
