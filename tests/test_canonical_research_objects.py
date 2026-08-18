@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import sys
@@ -218,24 +219,22 @@ def test_recent_sent_mail_news_are_automatically_preserved(tmp_path: Path) -> No
     recent = root / "hourly_value_recent"
     recent.mkdir(parents=True)
     recent_snapshot = recent / "snapshot.json"
-    recent_snapshot.write_text(
+    recent_payload = {
+        "generated_at": "2026-07-26T01:00:00Z",
+        "digest": [
+            {"portal_type": "news", "article_id": "news-recent"},
+            {"portal_type": "article", "article_id": "article-not-news"},
+        ],
+    }
+    recent_payload["snapshot_hash"] = hashlib.sha256(
         json.dumps(
-            {
-                "generated_at": "2026-07-26T01:00:00Z",
-                "digest": [
-                    {
-                        "portal_type": "news",
-                        "article_id": "news-recent",
-                    },
-                    {
-                        "portal_type": "article",
-                        "article_id": "article-not-news",
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+            recent_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    recent_snapshot.write_text(json.dumps(recent_payload), encoding="utf-8")
     (recent / "manifest.json").write_text(
         json.dumps(
             {
@@ -248,20 +247,19 @@ def test_recent_sent_mail_news_are_automatically_preserved(tmp_path: Path) -> No
     stale = root / "hourly_value_stale"
     stale.mkdir()
     stale_snapshot = stale / "snapshot.json"
-    stale_snapshot.write_text(
+    stale_payload = {
+        "generated_at": "2026-07-24T00:00:00Z",
+        "digest": [{"portal_type": "news", "article_id": "news-stale"}],
+    }
+    stale_payload["snapshot_hash"] = hashlib.sha256(
         json.dumps(
-            {
-                "generated_at": "2026-07-24T00:00:00Z",
-                "digest": [
-                    {
-                        "portal_type": "news",
-                        "article_id": "news-stale",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+            stale_payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    stale_snapshot.write_text(json.dumps(stale_payload), encoding="utf-8")
     (stale / "manifest.json").write_text(
         json.dumps(
             {
@@ -278,6 +276,67 @@ def test_recent_sent_mail_news_are_automatically_preserved(tmp_path: Path) -> No
     )
 
     assert ids == ["news-recent"]
+
+
+def test_pending_mail_news_are_temporarily_preserved_with_strict_boundaries(
+    tmp_path: Path,
+) -> None:
+    root = (
+        tmp_path
+        / "data"
+        / "semantic_pipeline_v2"
+        / "investment"
+        / "loop_engineering"
+        / "hourly_value_mail"
+    )
+
+    def add_run(name: str, status: str, generated_at: str, *, valid: bool = True) -> None:
+        run_dir = root / name
+        run_dir.mkdir(parents=True)
+        snapshot_path = run_dir / "snapshot.json"
+        payload = {
+            "generated_at": generated_at,
+            "digest": [{"portal_type": "news", "article_id": f"news-{name}"}],
+        }
+        payload["snapshot_hash"] = hashlib.sha256(
+            json.dumps(
+                payload,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if not valid:
+            payload["snapshot_hash"] = "corrupt"
+        snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+        (run_dir / "manifest.json").write_text(
+            json.dumps({"status": status, "snapshot_path": str(snapshot_path)}),
+            encoding="utf-8",
+        )
+
+    for status in (
+        "publish_failed",
+        "publishing",
+        "ready_to_send",
+        "mail_retry_pending",
+    ):
+        add_run(status, status, "2026-07-26T01:00:00Z")
+    for status in ("preview_ready", "content_policy_superseded", "stale"):
+        add_run(status, status, "2026-07-26T01:00:00Z")
+    add_run("old-pending", "publish_failed", "2026-07-24T00:00:00Z")
+    add_run("corrupt", "publish_failed", "2026-07-26T01:00:00Z", valid=False)
+
+    ids = discover_recent_sent_mail_news_ids(
+        repo_root=tmp_path,
+        current_time=datetime(2026, 7, 26, 2, 0, tzinfo=timezone.utc),
+    )
+
+    assert ids == [
+        "news-mail_retry_pending",
+        "news-publish_failed",
+        "news-publishing",
+        "news-ready_to_send",
+    ]
 
 
 def test_preserved_news_fill_but_never_expand_bounded_window(

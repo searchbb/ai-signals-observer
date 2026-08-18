@@ -510,13 +510,36 @@ def discover_recent_sent_mail_news_ids(
     now = (current_time or datetime.now(timezone.utc)).astimezone(timezone.utc)
     cutoff = now - timedelta(hours=max(1, lookback_hours))
     selected: set[str] = set()
+    retainable_statuses = {
+        "sent",
+        "publish_failed",
+        "publishing",
+        "ready_to_send",
+        "mail_retry_pending",
+    }
     for manifest_path in sorted(root.glob("*/manifest.json"), reverse=True):
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("status") != "sent":
+            if str(manifest.get("status") or "") not in retainable_statuses:
                 continue
             snapshot_path = Path(str(manifest.get("snapshot_path") or ""))
+            if snapshot_path.resolve().parent != manifest_path.resolve().parent:
+                continue
             snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+            expected_snapshot_hash = str(snapshot.get("snapshot_hash") or "")
+            unhashed = {
+                key: value for key, value in snapshot.items() if key != "snapshot_hash"
+            }
+            actual_snapshot_hash = hashlib.sha256(
+                json.dumps(
+                    unhashed,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            ).hexdigest()
+            if not expected_snapshot_hash or expected_snapshot_hash != actual_snapshot_hash:
+                continue
             timestamp = str(
                 snapshot.get("generated_at")
                 or snapshot.get("window_end")
